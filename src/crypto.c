@@ -42,7 +42,16 @@ int encrypt_data(const unsigned char *plaintext, size_t plaintext_len,
      * 3. Si l'appel échoue (retourne != 0), retourner -1.
      * 4. Sinon, retourner 0.
      */
-    return -1;
+    if (!plaintext || !key || !out_ciphertext || !out_nonce) {
+        fprintf(stderr, "Error: Invalid input to encrypt_data.\n");
+        return -1;
+    }
+    randombytes_buf(out_nonce, NONCE_SIZE);
+    if (crypto_secretbox_easy(out_ciphertext, plaintext, plaintext_len, out_nonce, key) != 0) {
+        fprintf(stderr, "Error: Encryption failed.\n");
+        return -1;
+    }
+    return 0;
 }
 
 int decrypt_data(const unsigned char *ciphertext, size_t ciphertext_len,
@@ -61,5 +70,13 @@ int decrypt_data(const unsigned char *ciphertext, size_t ciphertext_len,
      *    retourner -1.
      * 3. Sinon, retourner 0.
      */
-    return -1;
+    if (!ciphertext || !nonce || !key || !out_plaintext) {
+        fprintf(stderr, "Error: Invalid input to decrypt_data.\n");
+        return -1;
+    }
+    if (crypto_secretbox_open_easy(out_plaintext, ciphertext, ciphertext_len, nonce, key) != 0) {
+        fprintf(stderr, "Error: Decryption failed.\n");
+        return -1;
+    }
+    return 0;
 }

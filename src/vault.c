@@ -510,17 +510,143 @@ int vault_save(const Vault *vault, const char *filepath, const unsigned char *ke
      * 3. Écrire dans filepath.tmp : Salt (16o) + Nonce (24o) + Ciphertext.
      * 4. Remplacer le fichier original par rename().
      */
-    return -1;
+    unsigned char *serialized_buf = NULL;
+    size_t serialized_len = 0;
+
+    if (vault_serialize(vault, &serialized_buf, &serialized_len) != 0) {
+        fprintf(stderr, "Error: Failed to serialize vault.\n");
+        return -1;
+    }
+
+    size_t ciphertext_len = serialized_len + crypto_secretbox_MACBYTES;
+    unsigned char *ciphertext = (unsigned char *)sodium_malloc(ciphertext_len);
+    if (ciphertext == NULL) {
+        fprintf(stderr, "Error: Failed to allocate memory for ciphertext.\n");
+        sodium_free(serialized_buf);
+        return -1;
+    }
+
+    unsigned char nonce[NONCE_SIZE];
+    if (encrypt_data(serialized_buf, serialized_len, key, ciphertext, nonce) != 0) {
+        fprintf(stderr, "Error: Failed to encrypt vault data.\n");
+        sodium_free(serialized_buf);
+        sodium_free(ciphertext);
+        return -1;
+    }
+
+    char tmp_filepath[1024];
+    snprintf(tmp_filepath, sizeof(tmp_filepath), "%s.tmp", filepath);
+    FILE *fp = fopen(tmp_filepath, "wb");
+    if (!fp) {
+        fprintf(stderr, "Error: Failed to open temporary file for writing.\n");
+        sodium_free(serialized_buf);
+        sodium_free(ciphertext);
+        return -1;
+    }
+
+    if (fwrite(salt, 1, SALT_SIZE, fp) != SALT_SIZE ||
+        fwrite(nonce, 1, NONCE_SIZE, fp) != NONCE_SIZE ||
+        fwrite(ciphertext, 1, ciphertext_len, fp) != ciphertext_len) {
+        fprintf(stderr, "Error: Failed to write to temporary file.\n");
+        fclose(fp);
+        remove(tmp_filepath);
+        sodium_free(serialized_buf);
+        sodium_free(ciphertext);
+        return -1;
+    }
+
+    fclose(fp);
+
+    if (rename(tmp_filepath, filepath) != 0) {
+        fprintf(stderr, "Error: Failed to rename temporary file to target file.\n");
+        remove(tmp_filepath);
+        sodium_free(serialized_buf);
+        sodium_free(ciphertext);
+        return -1;
+    }
+
+    sodium_memzero(serialized_buf, serialized_len);
+    sodium_free(serialized_buf);
+    sodium_free(ciphertext);
+    return 0;
 }
 
 Vault *vault_load(const char *filepath, const unsigned char *key, unsigned char *out_salt) {
-    /*
-     * TODO : Étape 5d
-     * Identique à l'implémentation précédente :
-     * 1. Lire filepath : extraire Salt, Nonce, Ciphertext.
-     * 2. Déchiffrer (decrypt_data).
-     * 3. Désérialiser (vault_deserialize).
-     * 4. Nettoyer la RAM temporaire.
-     */
-    return NULL;
+    FILE *fp = fopen(filepath, "rb");
+    if (!fp) {
+        // C'est normal si le fichier n'existe pas encore (première exécution)
+        return NULL;
+    }
+
+    // 1. Calcul de la taille totale du fichier
+    fseek(fp, 0, SEEK_END);
+    long file_size = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+
+    // Taille minimale requise : Salt (16o) + Nonce (24o) + Tag MAC (16o) = 56o
+    if (file_size < (long)(SALT_SIZE + NONCE_SIZE + crypto_secretbox_MACBYTES)) {
+        fprintf(stderr, "Error: Vault file is too small or corrupted.\n");
+        fclose(fp);
+        return NULL;
+    }
+
+    // 2. Lecture du Salt public
+    if (fread(out_salt, 1, SALT_SIZE, fp) != SALT_SIZE) {
+        fprintf(stderr, "Error: Failed to read salt.\n");
+        fclose(fp);
+        return NULL;
+    }
+
+    // 3. Lecture du Nonce
+    unsigned char nonce[NONCE_SIZE];
+    if (fread(nonce, 1, NONCE_SIZE, fp) != NONCE_SIZE) {
+        fprintf(stderr, "Error: Failed to read nonce.\n");
+        fclose(fp);
+        return NULL;
+    }
+
+    // 4. Lecture du Ciphertext restant
+    size_t ciphertext_len = file_size - SALT_SIZE - NONCE_SIZE;
+    unsigned char *ciphertext = (unsigned char *)sodium_malloc(ciphertext_len);
+    if (!ciphertext) {
+        fprintf(stderr, "Error: Failed to allocate memory for ciphertext.\n");
+        fclose(fp);
+        return NULL;
+    }
+
+    if (fread(ciphertext, 1, ciphertext_len, fp) != ciphertext_len) {
+        fprintf(stderr, "Error: Failed to read ciphertext.\n");
+        sodium_free(ciphertext);
+        fclose(fp);
+        return NULL;
+    }
+
+    fclose(fp); // On peut fermer le fichier car tout a été chargé en RAM
+
+    // 5. Déchiffrement
+    size_t plaintext_len = ciphertext_len - crypto_secretbox_MACBYTES;
+    unsigned char *plaintext = (unsigned char *)sodium_malloc(plaintext_len);
+    if (!plaintext) {
+        fprintf(stderr, "Error: Failed to allocate memory for plaintext.\n");
+        sodium_free(ciphertext);
+        return NULL;
+    }
+
+    if (decrypt_data(ciphertext, ciphertext_len, nonce, key, plaintext) != 0) {
+        fprintf(stderr, "Error: Decryption failed (wrong master password or file corruption).\n");
+        sodium_free(ciphertext);
+        sodium_free(plaintext);
+        return NULL;
+    }
+
+    sodium_free(ciphertext); // Plus besoin du chiffré
+
+    // 6. Désérialisation pour reconstruire le coffre en mémoire
+    Vault *vault = vault_deserialize(plaintext, plaintext_len);
+
+    // Sécurité : effacer le tampon en clair
+    sodium_memzero(plaintext, plaintext_len);
+    sodium_free(plaintext);
+
+    return vault;
 }
