@@ -16,6 +16,27 @@ static char *sodium_strdup(const char *s) {
     return copy;
 }
 
+// Écrit un entier 16-bit en Big-Endian dans le buffer
+static void write_uint16(unsigned char *buf, uint16_t val) {
+    buf[0] = (val >> 8) & 0xFF;
+    buf[1] = val & 0xFF;
+}
+// Écrit un entier 32-bit en Big-Endian dans le buffer
+static void write_uint32(unsigned char *buf, uint32_t val) {
+    buf[0] = (val >> 24) & 0xFF;
+    buf[1] = (val >> 16) & 0xFF;
+    buf[2] = (val >> 8) & 0xFF;
+    buf[3] = val & 0xFF;
+}
+// Lit un entier 16-bit Big-Endian depuis le buffer
+static uint16_t read_uint16(const unsigned char *buf) {
+    return (uint16_t)((buf[0] << 8) | buf[1]);
+}
+// Lit un entier 32-bit Big-Endian depuis le buffer
+static uint32_t read_uint32(const unsigned char *buf) {
+    return (uint32_t)((buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3]);
+}
+
 Vault *vault_create(void) {
     /*
      * TODO : Étape 3a
@@ -290,28 +311,193 @@ int vault_serialize(const Vault *vault, unsigned char **out_buf, size_t *out_len
      * 5. Remplir out_len avec la taille totale écrite.
      * 6. Retourner 0 en cas de succès, -1 en cas d'erreur.
      */
-    return -1;
+
+    size_t total_size = 5; // Version + Nb d'entrées
+    for (size_t i = 0; i < vault->count; i++) {
+        Entry *entry = &vault->entries[i];
+        total_size += 2 + strlen(entry->title); // Titre len + titre
+        total_size += 2 + strlen(entry->type);  // Type len + type
+        total_size += 2; // Nb de champs
+        for (size_t j = 0; j < entry->count; j++) {
+            Field *field = &entry->fields[j];
+            total_size += 2 + strlen(field->name);  // Nom len + nom
+            total_size += 4 + strlen(field->value); // Valeur len + valeur
+            total_size += 1; // IsSensitive flag
+        }
+    }
+
+    *out_buf = (unsigned char *)sodium_malloc(total_size); // Version + Nb d'entrées
+    if (*out_buf == NULL) {
+        return -1;
+    }
+    unsigned char *buf = *out_buf;
+    *out_len = total_size;
+
+    size_t offset = 0;
+    buf[offset++] = VAULT_VERSION;
+    write_uint32(buf + offset, (uint32_t)vault->count);
+    offset += 4;
+    for (size_t i = 0; i < vault->count; i++) {
+        Entry *entry = &vault->entries[i];
+        write_uint16(buf + offset, (uint16_t)strlen(entry->title));
+        offset += 2;
+        memcpy(buf + offset, entry->title, strlen(entry->title));
+        offset += strlen(entry->title);
+
+        write_uint16(buf + offset, (uint16_t)strlen(entry->type));
+        offset += 2;
+        memcpy(buf + offset, entry->type, strlen(entry->type));
+        offset += strlen(entry->type);
+
+        write_uint16(buf + offset, (uint16_t)entry->count);
+        offset += 2;
+
+        for (size_t j = 0; j < entry->count; j++) {
+            Field *field = &entry->fields[j];
+            write_uint16(buf + offset, (uint16_t)strlen(field->name));
+            offset += 2;
+            memcpy(buf + offset, field->name, strlen(field->name));
+            offset += strlen(field->name);
+
+            write_uint32(buf + offset, (uint32_t)strlen(field->value));
+            offset += 4;
+            memcpy(buf + offset, field->value, strlen(field->value));
+            offset += strlen(field->value);
+
+            buf[offset++] = field->is_sensitive ? 1 : 0;
+        }
+    }
+    if (offset != total_size) {
+        fprintf(stderr, "Error: Serialization size mismatch.\n");
+        sodium_free(buf);
+        *out_buf = NULL;
+        *out_len = 0;
+        return -1;
+    }
+    *out_len = total_size;
+    return 0;
 }
 
 Vault *vault_deserialize(const unsigned char *buf, size_t len) {
-    /*
-     * TODO : Étape 4b (Désérialisation récursive)
-     * 1. Vérifier la taille minimale et la version (buf[0] == VAULT_VERSION).
-     * 2. Lire le nombre d'entrées (uint32_t à partir de buf[1]).
-     * 3. Créer un coffre avec vault_create().
-     * 4. Pour chaque entrée :
-     *    - Lire la longueur du titre, copier le titre.
-     *    - Lire la longueur du type, copier le type.
-     *    - Ajouter l'entrée au Vault avec vault_add_entry().
-     *    - Lire le nombre de champs (uint16_t).
-     *    - Pour chaque champ :
-     *      - Lire la longueur du nom, copier le nom.
-     *      - Lire la longueur de la valeur, copier la valeur.
-     *      - Lire le flag is_sensitive (1o).
-     *      - Ajouter le champ à l'entrée avec entry_set_field().
-     * 5. Vérifier tout au long de la lecture qu'on ne dépasse pas 'len' pour éviter les dépassements de buffer.
-     * 6. Retourner le Vault reconstitué.
-     */
+    if (buf == NULL || len < 5) {
+        return NULL;
+    }
+    if (buf[0] != VAULT_VERSION) {
+        fprintf(stderr, "Error: Unsupported vault version %d.\n", buf[0]);
+        return NULL;
+    }
+
+    Vault *vault = vault_create();
+    if (vault == NULL) {
+        return NULL;
+    }
+
+    size_t offset = 1;
+    uint32_t entries_count = read_uint32(buf + offset);
+    offset += 4;
+
+    for (size_t i = 0; i < entries_count; i++) {
+        if (offset + 6 > len) {
+            goto error;
+        }
+
+        uint16_t title_len = read_uint16(buf + offset);
+        offset += 2;
+        if (offset + title_len > len) {
+            goto error;
+        }
+        char *title = (char *)sodium_malloc(title_len + 1);
+        if (title == NULL) {
+            goto error;
+        }
+        memcpy(title, buf + offset, title_len);
+        title[title_len] = '\0';
+        offset += title_len;
+
+        uint16_t type_len = read_uint16(buf + offset);
+        offset += 2;
+        if (offset + type_len > len) {
+            sodium_free(title);
+            goto error;
+        }
+        char *type = (char *)sodium_malloc(type_len + 1);
+        if (type == NULL) {
+            sodium_free(title);
+            goto error;
+        }
+        memcpy(type, buf + offset, type_len);
+        type[type_len] = '\0';
+        offset += type_len;
+
+        Entry *entry = vault_add_entry(vault, title, type);
+        sodium_free(title);
+        sodium_free(type);
+        if (entry == NULL) {
+            goto error;
+        }
+
+        uint16_t fields_count = read_uint16(buf + offset);
+        offset += 2;
+
+        for (size_t j = 0; j < fields_count; j++) {
+            if (offset + 7 > len) {
+                goto error;
+            }
+
+            uint16_t name_len = read_uint16(buf + offset);
+            offset += 2;
+            if (offset + name_len > len) {
+                goto error;
+            }
+            char *name = (char *)sodium_malloc(name_len + 1);
+            if (name == NULL) {
+                goto error;
+            }
+            memcpy(name, buf + offset, name_len);
+            name[name_len] = '\0';
+            offset += name_len;
+
+            uint32_t val_len = read_uint32(buf + offset);
+            offset += 4;
+            if (offset + val_len > len) {
+                sodium_free(name);
+                goto error;
+            }
+            char *value = (char *)sodium_malloc(val_len + 1);
+            if (value == NULL) {
+                sodium_free(name);
+                goto error;
+            }
+            memcpy(value, buf + offset, val_len);
+            value[val_len] = '\0';
+            offset += val_len;
+
+            if (offset + 1 > len) {
+                sodium_free(name);
+                sodium_free(value);
+                goto error;
+            }
+            int is_sensitive = buf[offset++];
+
+            int ret = entry_set_field(entry, name, value, is_sensitive);
+            if (is_sensitive) {
+                sodium_memzero(value, val_len);
+            }
+            sodium_free(name);
+            sodium_free(value);
+            if (ret != 0) {
+                goto error;
+            }
+        }
+    }
+
+    return vault;
+
+error:
+    fprintf(stderr, "Error: Failed to deserialize vault (corrupted data or memory error).\n");
+    if (vault) {
+        vault_free(vault);
+    }
     return NULL;
 }
 
