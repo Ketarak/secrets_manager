@@ -4,32 +4,27 @@
 #include <string.h>
 
 int crypto_init(void) {
-    /*
-     * TODO : Étape 1
-     * 1. Appeler sodium_init()
-     * 2. Si sodium_init() renvoie -1, afficher une erreur sur stderr et retourner -1.
-     * 3. Si sodium_init() réussit (retourne >= 0, ou 1 si déjà initialisé), retourner 0.
-     */
-    return -1;
+    if (sodium_init() >= 0) {
+        return 0;
+    }
+    else {
+        fprintf(stderr, "Error: Failed to initialize the libsodium library.\n");
+        return -1;
+    }
 }
 
 int derive_key(const char *password, const unsigned char *salt, unsigned char *out_key) {
-    /*
-     * TODO : Étape 2
-     * 1. Valider les entrées (password != NULL, salt != NULL, out_key != NULL).
-     * 2. Appeler crypto_pwhash() :
-     *    - out : out_key
-     *    - outlen : KEY_SIZE
-     *    - passwd : password
-     *    - passwdlen : strlen(password)
-     *    - salt : salt
-     *    - opslimit : crypto_pwhash_OPSLIMIT_INTERACTIVE
-     *    - memlimit : crypto_pwhash_MEMLIMIT_INTERACTIVE
-     *    - alg : crypto_pwhash_ALG_DEFAULT
-     * 3. Vérifier le retour de crypto_pwhash(). Si != 0, retourner -1 (erreur).
-     * 4. Sinon, retourner 0.
-     */
-    return -1;
+    if (!password || !salt || !out_key) {
+        fprintf(stderr, "Error: Invalid input to derive_key.\n");
+        return -1;
+    }
+    if (crypto_pwhash(out_key, KEY_SIZE, password, strlen(password), salt,
+                      crypto_pwhash_OPSLIMIT_INTERACTIVE, crypto_pwhash_MEMLIMIT_INTERACTIVE,
+                      crypto_pwhash_ALG_DEFAULT) != 0) {
+        fprintf(stderr, "Error: Key derivation failed.\n");
+        return -1;
+    }
+    return 0;
 }
 
 int encrypt_data(const unsigned char *plaintext, size_t plaintext_len,

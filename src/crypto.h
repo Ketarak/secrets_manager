@@ -8,23 +8,8 @@
 #define NONCE_SIZE 24      /* crypto_secretbox_NONCEBYTES */
 #define SALT_SIZE 16       /* crypto_pwhash_SALTBYTES */
 
-/*
- * Étape 1 : Initialisation de libsodium.
- * Doit être appelée au tout début de main() avant toute autre fonction crypto.
- * Retourne 0 en cas de succès, -1 en cas d'erreur.
- * Indice : utiliser sodium_init().
- */
 int crypto_init(void);
 
-/*
- * Étape 2 : Dérivation de clé à partir du mot de passe maître.
- * Prend le mot de passe maître et un sel (salt), et génère une clé de 32 octets.
- * Retourne 0 en cas de succès, -1 en cas d'erreur.
- * Indice : utiliser crypto_pwhash() avec les paramètres de sécurité :
- *   - opslimit = crypto_pwhash_OPSLIMIT_INTERACTIVE
- *   - memlimit = crypto_pwhash_MEMLIMIT_INTERACTIVE
- *   - alg = crypto_pwhash_ALG_DEFAULT
- */
 int derive_key(const char *password, const unsigned char *salt, unsigned char *out_key);
 
 /*
