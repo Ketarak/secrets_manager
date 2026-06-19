@@ -160,7 +160,46 @@ int entry_set_field(Entry *entry, const char *name, const char *value, int is_se
      *    - Incrémenter entry->count.
      *    - Retourner 0.
      */
-    return -1;
+    Field *field = entry_find_field(entry, name);
+    if (field != NULL) {
+        char *new_value = sodium_strdup(value);
+        if (!new_value) {
+            fprintf(stderr, "Error: Failed to allocate memory for Field value.\n");
+            return -1;
+        }
+        if (field->is_sensitive && field->value) {
+            sodium_memzero(field->value, strlen(field->value));
+        }
+        sodium_free(field->value);
+        field->value = new_value;
+        field->is_sensitive = is_sensitive;
+        return 0;
+    }
+
+    if (entry->count >= entry->capacity) {
+        size_t new_capacity = entry->capacity * 2;
+        Field *new_fields = (Field *)sodium_allocarray(new_capacity, sizeof(Field));
+        if (!new_fields) {
+            fprintf(stderr, "Error: Failed to allocate memory for Entry fields.\n");
+            return -1;
+        }
+        memcpy(new_fields, entry->fields, entry->count * sizeof(Field));
+        sodium_free(entry->fields);
+        entry->fields = new_fields;
+        entry->capacity = new_capacity;
+    }
+    Field *field = &entry->fields[entry->count];
+    field->name = sodium_strdup(name);
+    field->value = sodium_strdup(value);
+    if (!field->name || !field->value) {
+        fprintf(stderr, "Error: Failed to allocate memory for Field name or value.\n");
+        sodium_free(field->name);
+        sodium_free(field->value);
+        return -1;
+    }
+    field->is_sensitive = is_sensitive;
+    entry->count++;
+    return 0;
 }
 
 Entry *vault_find_entry(Vault *vault, const char *title) {
@@ -170,6 +209,11 @@ Entry *vault_find_entry(Vault *vault, const char *title) {
      * 2. Si strcmp(entry.title, title) == 0, retourner le pointeur vers cette entrée.
      * 3. Retourner NULL si non trouvé.
      */
+    for (size_t i = 0; i < vault->count; i++) {
+        if (strcmp(vault->entries[i].title, title) == 0) {
+            return &vault->entries[i];
+        }
+    }
     return NULL;
 }
 
@@ -180,6 +224,11 @@ Field *entry_find_field(Entry *entry, const char *name) {
      * 2. Si strcmp(field.name, name) == 0, retourner le pointeur vers ce champ.
      * 3. Retourner NULL si non trouvé.
      */
+    for (size_t i = 0; i < entry->count; i++) {
+        if (strcmp(entry->fields[i].name, name) == 0) {
+            return &entry->fields[i];
+        }
+    }
     return NULL;
 }
 
@@ -193,7 +242,31 @@ int vault_delete_entry(Vault *vault, const char *title) {
      * 5. Décrémenter vault->count.
      * 6. Retourner 0.
      */
-    return -1;
+
+    Entry *entry = vault_find_entry(vault, title);
+    
+    if (entry == NULL) {
+        return -1;
+    }
+    size_t index = entry - vault->entries;
+
+    for (size_t j = 0; j < entry->count; j++) {
+        Field *field = &entry->fields[j];
+        if (field->is_sensitive && field->value) {
+            sodium_memzero(field->value, strlen(field->value));
+        }
+        sodium_free(field->name);
+        sodium_free(field->value);
+    }
+    sodium_free(entry->fields);
+    sodium_free(entry->title);
+    sodium_free(entry->type);
+    for (size_t i = index; i < vault->count - 1; i++) {
+        vault->entries[i] = vault->entries[i + 1];
+    }
+    vault->count--;
+    memset(&vault->entries[vault->count], 0, sizeof(Entry));
+    return 0;
 }
 
 int vault_serialize(const Vault *vault, unsigned char **out_buf, size_t *out_len) {
