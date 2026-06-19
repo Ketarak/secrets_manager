@@ -1,0 +1,22 @@
+# Objets compilés et exécutables
+obj/
+*.o
+passmgr
+
+# Fichiers de coffre chiffrés (ne jamais commiter les secrets)
+*.enc
+*.enc.tmp
+
+# Fichiers temporaires des éditeurs et OS
+*~
+*.swp
+.DS_Store
+
+# Fichiers de configuration IDE optionnels
+.vscode/
+.idea/
+.clang-format
+
+
+walkthrough.md
+task.md
