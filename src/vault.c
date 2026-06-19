@@ -101,7 +101,43 @@ Entry *vault_add_entry(Vault *vault, const char *title, const char *type) {
      * 9. Incrémenter vault->count.
      * 10. Retourner le pointeur entry.
      */
-    return NULL;
+     if (vault_find_entry(vault, title) != NULL) {
+        fprintf(stderr, "Error: Entry with title '%s' already exists.\n", title);
+        return NULL;
+    }
+    if (vault->count >= vault->capacity) {
+        size_t new_capacity = vault->capacity * 2;
+        Entry *new_entries = (Entry *)sodium_allocarray(new_capacity, sizeof(Entry));
+        if (!new_entries) {
+            fprintf(stderr, "Error: Failed to allocate memory for Vault entries.\n");
+            return NULL;
+        }
+        memcpy(new_entries, vault->entries, vault->count * sizeof(Entry));
+        sodium_free(vault->entries);
+        vault->entries = new_entries;
+        vault->capacity = new_capacity;
+    }
+    Entry *entry = &vault->entries[vault->count];
+    entry->title = sodium_strdup(title);
+    entry->type = sodium_strdup(type);
+    if (!entry->title || !entry->type) {
+        fprintf(stderr, "Error: Failed to allocate memory for Entry title or type.\n");
+        sodium_free(entry->title);
+        sodium_free(entry->type);
+        return NULL;
+    }
+    entry->count = 0;
+    entry->capacity = 4;
+    entry->fields = (Field *)sodium_allocarray(entry->capacity, sizeof(Field));
+    if (!entry->fields) {
+        fprintf(stderr, "Error: Failed to allocate memory for Entry fields.\n");
+        sodium_free(entry->title);
+        sodium_free(entry->type);
+        return NULL;
+    }
+    memset(entry->fields, 0, entry->capacity * sizeof(Field));
+    vault->count++;
+    return entry;
 }
 
 int entry_set_field(Entry *entry, const char *name, const char *value, int is_sensitive) {
