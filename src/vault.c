@@ -209,7 +209,7 @@ int entry_set_field(Entry *entry, const char *name, const char *value, int is_se
         entry->fields = new_fields;
         entry->capacity = new_capacity;
     }
-    Field *field = &entry->fields[entry->count];
+    field = &entry->fields[entry->count];
     field->name = sodium_strdup(name);
     field->value = sodium_strdup(value);
     if (!field->name || !field->value) {
