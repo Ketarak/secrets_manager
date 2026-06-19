@@ -5,6 +5,17 @@
 #include <stdlib.h>
 #include <string.h>
 
+
+static char *sodium_strdup(const char *s) {
+    if (!s) return NULL;
+    size_t len = strlen(s);
+    char *copy = (char *)sodium_malloc(len + 1);
+    if (!copy) return NULL;
+    memcpy(copy, s, len);
+    copy[len] = '\0';
+    return copy;
+}
+
 Vault *vault_create(void) {
     /*
      * TODO : Étape 3a
@@ -14,7 +25,22 @@ Vault *vault_create(void) {
      * 4. Initialiser à zéro (avec memset) le tableau d'entrées.
      * 5. Retourner le pointeur Vault.
      */
-    return NULL;
+    Vault *vault = (Vault *)sodium_malloc(sizeof(Vault));
+    if (!vault) {
+        fprintf(stderr, "Error: Failed to allocate memory for Vault.\n");
+        return NULL;
+    }
+    vault->count = 0;
+    vault->capacity = 4;
+    vault->entries = (Entry *)sodium_allocarray(vault->capacity, sizeof(Entry));
+    if (!vault->entries) {
+        fprintf(stderr, "Error: Failed to allocate memory for Vault entries.\n");
+        sodium_free(vault);
+        return NULL;
+    }
+    memset(vault->entries, 0, vault->capacity * sizeof(Entry));
+
+    return vault;
 }
 
 void vault_free(Vault *vault) {
@@ -32,6 +58,27 @@ void vault_free(Vault *vault) {
      * 3. Libérer le tableau d'entrées vault->entries.
      * 4. Libérer la structure vault.
      */
+    if (!vault) {
+        return;
+    }
+    while (vault->count > 0) {
+        Entry *entry = &vault->entries[vault->count - 1];
+        sodium_free(entry->title);
+        sodium_free(entry->type);
+        while (entry->count > 0) {
+            Field *field = &entry->fields[entry->count - 1];
+            if (field->is_sensitive && field->value) {
+                sodium_memzero(field->value, strlen(field->value));
+            }
+                sodium_free(field->name);
+                sodium_free(field->value);
+            entry->count--;
+        }
+        sodium_free(entry->fields);
+        vault->count--; 
+    }
+    sodium_free(vault->entries);
+    sodium_free(vault);
 }
 
 Entry *vault_add_entry(Vault *vault, const char *title, const char *type) {
