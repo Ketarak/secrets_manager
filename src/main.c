@@ -364,14 +364,22 @@ int main(int argc, char *argv[]) {
                 char f_val[2048] = "";
                 printf("  Field value: ");
                 fflush(stdout);
-                if (fgets(f_val, sizeof(f_val), stdin) == NULL) break;
+                if (fgets(f_val, sizeof(f_val), stdin) == NULL) {
+                    sodium_memzero(f_val, sizeof(f_val));
+                    break;
+                }
                 size_t fv_len = strlen(f_val);
                 if (fv_len > 0 && f_val[fv_len - 1] == '\n') f_val[fv_len - 1] = '\0';
 
                 char sens[16] = "";
                 printf("  Is this field sensitive (y/n)? [n]: ");
                 fflush(stdout);
-                if (fgets(sens, sizeof(sens), stdin) == NULL) break;
+                if (fgets(sens, sizeof(sens), stdin) == NULL) {
+                    sodium_memzero(f_val, sizeof(f_val));
+                    sodium_memzero(f_name, sizeof(f_name));
+                    sodium_memzero(sens, sizeof(sens));                 
+                    break;
+                }
                 int is_sens = (sens[0] == 'y' || sens[0] == 'Y') ? 1 : 0;
 
                 if (entry_set_field(entry, f_name, f_val, is_sens) != 0) {
@@ -382,6 +390,8 @@ int main(int argc, char *argv[]) {
                 if (is_sens) {
                     sodium_memzero(f_val, sizeof(f_val));
                 }
+                sodium_memzero(f_val, sizeof(f_val));
+                sodium_memzero(f_name, sizeof(f_name));
             }
 
             // Sauvegarde automatique
