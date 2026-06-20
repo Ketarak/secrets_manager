@@ -9,25 +9,11 @@
 #include <unistd.h>
 #include <termios.h>
 
-/*
- * Étape 6b : Saisie du mot de passe maître sans écho terminal.
- * Désactive l'affichage (ECHO) sur le terminal pour saisir le mot de passe de façon sécurisée.
- * Retourne 0 en cas de succès, -1 en cas d'erreur.
+/* Saisie du mot de passe maître sans écho terminal.
+ * Disables console ECHO to read master password securely.
+ * Returns 0 on success, -1 on error.
  */
 static int read_password(char *buf, size_t max_len) {
-    /*
-     * TODO : Saisie sécurisée sans écho
-     * 1. Déclarer struct termios old_t, new_t.
-     * 2. Récupérer les attributs actuels du terminal avec tcgetattr(STDIN_FILENO, &old_t).
-     * 3. Copier old_t dans new_t : new_t = old_t.
-     * 4. Désactiver l'écho en désactivant le flag ECHO : new_t.c_lflag &= ~ECHO.
-     * 5. Appliquer les nouveaux attributs avec tcsetattr(STDIN_FILENO, TCSANOW, &new_t).
-     * 6. Lire le mot de passe depuis stdin en utilisant fgets() ou similaire.
-     * 7. Supprimer le retour à la ligne '\n' à la fin de la saisie si présent.
-     * 8. Rétablir les attributs originaux avec tcsetattr(STDIN_FILENO, TCSANOW, &old_t).
-     * 9. Imprimer un saut de ligne printf("\n") pour que le prompt suivant commence sur une nouvelle ligne.
-     * 10. Retourner 0 en cas de succès.
-     */
     struct termios old_t, new_t;
     if (tcgetattr(STDIN_FILENO, &old_t) != 0) {
         fprintf(stderr, "Error: Failed to get terminal attributes.\n");
@@ -59,66 +45,15 @@ static int read_password(char *buf, size_t max_len) {
 }
 
 int main(int argc, char *argv[]) {
-    /*
-     * TODO : Étape 6a - Initialisation et parsing CLI
-     * 
-     * 1. Appeler crypto_init() pour initialiser libsodium.
-     * 
-     * 2. Parser les options avec getopt_long ou getopt standard :
-     *    -f <path> : spécifier le chemin du fichier coffre (par défaut: "vault.enc")
-     *    -n / --native : lancer en mode Native Messaging Firefox
-     *    -h / --help : afficher l'aide
-     * 
-     * 3. Si le mode Native Messaging est spécifié (-n) :
-     *    - Appeler native_messaging_loop(filepath).
-     *    - Retourner le code de retour de la boucle.
-     * 
-     * 4. Sinon, analyser la commande demandée (add, get, list, delete) :
-     *    
-     *    a. Commande "list" :
-     *       - Demander le mot de passe maître.
-     *       - Charger le coffre (si le fichier n'existe pas, initialiser un nouveau Vault).
-     *         - Pour charger : lire le salt en tête, dériver la clé, appeler vault_load.
-     *       - Afficher la liste des titres d'entrées (ex: "1. google.com\n2. github.com\n").
-     *       - Libérer le Vault.
-     * 
-     *    b. Commande "get <title>" :
-     *       - Demander le mot de passe maître.
-     *       - Charger le coffre.
-     *       - Chercher l'entrée avec le titre.
-     *       - Si trouvée, afficher le login et le mot de passe.
-     *         (Optionnel : copier le mot de passe dans le presse-papier et lancer un timer d'auto-clear).
-     *       - Libérer le Vault.
-     * 
-     *    c. Commande "add <title>" :
-     *       - Demander le mot de passe maître.
-     *       - Charger le coffre. Si nouveau coffre :
-     *         - Générer un nouveau salt aléatoire avec randombytes_buf().
-     *         - Dériver la clé.
-     *       - Demander à l'utilisateur de saisir le login.
-     *       - Demander à l'utilisateur de saisir le mot de passe (ou proposer une génération aléatoire).
-     *       - Ajouter ou modifier l'entrée dans le coffre (vault_add_entry).
-     *       - Sauvegarder le coffre (vault_save).
-     *       - Libérer le Vault.
-     * 
-     *    d. Commande "delete <title>" :
-     *       - Demander le mot de passe maître.
-     *       - Charger le coffre.
-     *       - Supprimer l'entrée (vault_delete_entry).
-     *       - Sauvegarder le coffre (vault_save).
-     *       - Libérer le Vault.
-     * 
-     * 5. S'assurer de nettoyer toutes les clés et variables sensibles avec sodium_memzero avant de quitter.
-     */
     char default_path[2048] = "vault.enc";
     char bin_path[1024];
-    // Lit le chemin réel du binaire exécuté (spécifique à Linux)
+    // Resolve absolute path to binary to look up the default "vault.enc" file next to it
     ssize_t link_len = readlink("/proc/self/exe", bin_path, sizeof(bin_path) - 1);
     if (link_len != -1) {
         bin_path[link_len] = '\0';
         char *dir = strrchr(bin_path, '/');
         if (dir) {
-            *dir = '\0'; // Coupe le nom du binaire pour garder le répertoire
+            *dir = '\0';
             snprintf(default_path, sizeof(default_path), "%s/vault.enc", bin_path);
         }
     }
@@ -155,8 +90,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // Si un argument se termine par ".json" (Firefox passant le chemin du manifeste),
-    // on active automatiquement le mode Native Messaging.
+    // Auto-detect native messaging mode when launched by Firefox (passing a .json manifest path as argument)
     for (int i = optind; i < argc; i++) {
         size_t arg_len = strlen(argv[i]);
         if (arg_len > 5 && strcmp(argv[i] + arg_len - 5, ".json") == 0) {
@@ -168,15 +102,13 @@ int main(int argc, char *argv[]) {
         return native_messaging_loop(filepath);
     }
 
-    // 1. Initialisation des variables globales de session
+    // Initialize global session variables
     Vault *vault = NULL;
     unsigned char salt[SALT_SIZE];
     unsigned char key[KEY_SIZE];
 
-    // 2. Détection et déverrouillage / création du coffre
-    // On utilise access() de <unistd.h> pour tester la présence du fichier
+    // Detect and unlock/create the vault
     if (access(filepath, F_OK) == 0) {
-        // Le fichier existe, on le déverrouille
         char master_password[256];
         printf("Vault file found. Enter master password to unlock: ");
         fflush(stdout);
@@ -184,7 +116,7 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
-        // On lit d'abord le Salt en tête de fichier
+        // Read public salt from file header
         FILE *f = fopen(filepath, "rb");
         if (!f) {
             fprintf(stderr, "Error: Failed to open vault file for salt extraction.\n");
@@ -199,15 +131,15 @@ int main(int argc, char *argv[]) {
         }
         fclose(f);
 
-        // Dérive la clé maître à partir du mot de passe saisi et du salt extrait
+        // Derive key from password and salt
         if (derive_key(master_password, salt, key) != 0) {
             sodium_memzero(master_password, sizeof(master_password));
             return 1;
         }
-        // Sécurité : effacer le mot de passe maître en clair immédiatement !
+        // Securely wipe cleartext password
         sodium_memzero(master_password, sizeof(master_password));
 
-        // Charge et déchiffre le coffre
+        // Load and decrypt vault
         unsigned char dummy_salt[SALT_SIZE];
         vault = vault_load(filepath, key, dummy_salt);
         if (!vault) {
@@ -218,7 +150,6 @@ int main(int argc, char *argv[]) {
         printf("[+] Vault unlocked successfully.\n");
 
     } else {
-        // Le fichier n'existe pas, on crée un nouveau coffre
         char master_password[256];
         char confirm_password[256];
 
@@ -243,20 +174,19 @@ int main(int argc, char *argv[]) {
             sodium_memzero(confirm_password, sizeof(confirm_password));
             return 1;
         }
-        // Sécurité : effacer la confirmation
         sodium_memzero(confirm_password, sizeof(confirm_password));
 
-        // Génère un nouveau sel aléatoire sécurisé
+        // Generate a new secure random salt
         randombytes_buf(salt, SALT_SIZE);
 
-        // Dérive la clé maître
+        // Derive key
         if (derive_key(master_password, salt, key) != 0) {
             sodium_memzero(master_password, sizeof(master_password));
             return 1;
         }
         sodium_memzero(master_password, sizeof(master_password));
 
-        // Crée la structure vide en RAM
+        // Create empty vault
         vault = vault_create();
         if (!vault) {
             fprintf(stderr, "Error: Failed to create new vault structure.\n");
@@ -264,7 +194,7 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
-        // Sauvegarde immédiatement pour créer le fichier sur le disque
+        // Save immediately to generate vault file on disk
         if (vault_save(vault, filepath, key, salt) != 0) {
             fprintf(stderr, "Error: Failed to initialize vault file.\n");
             vault_free(vault);
@@ -274,7 +204,7 @@ int main(int argc, char *argv[]) {
         printf("[+] Created new vault file successfully.\n");
     }
 
-    // 3. Boucle interactive (REPL)
+    // Run interactive command line REPL loop
     char cmd_line[1024];
     printf("\n=== Secrets Manager Console ===\n");
     printf("Type 'help' to list commands, 'exit' to quit.\n\n");
@@ -285,21 +215,21 @@ int main(int argc, char *argv[]) {
 
         if (fgets(cmd_line, sizeof(cmd_line), stdin) == NULL) {
             printf("\n");
-            break; // Arrêt propre sur Ctrl+D (EOF)
+            break; // Stop on EOF (Ctrl+D)
         }
 
-        // Nettoyage du saut de ligne final
+        // Clean trailing newline
         size_t len = strlen(cmd_line);
         if (len > 0 && cmd_line[len - 1] == '\n') {
             cmd_line[len - 1] = '\0';
         }
 
-        // Trim des espaces de début de commande
+        // Trim leading whitespace
         char *p = cmd_line;
         while (*p == ' ' || *p == '\t') p++;
-        if (*p == '\0') continue; // Ligne vide
+        if (*p == '\0') continue;
 
-        // Découpage de la commande et de son argument (format: <commande> [argument])
+        // Parse command and argument
         char command[256] = "";
         char arg[768] = "";
         int num = sscanf(p, "%255s %767[^\n]", command, arg);
@@ -381,7 +311,7 @@ int main(int argc, char *argv[]) {
                 if (fgets(f_name, sizeof(f_name), stdin) == NULL) break;
                 size_t fn_len = strlen(f_name);
                 if (fn_len > 0 && f_name[fn_len - 1] == '\n') f_name[fn_len - 1] = '\0';
-                if (strlen(f_name) == 0) break; // Fin de saisie
+                if (strlen(f_name) == 0) break;
 
                 char f_val[2048] = "";
                 printf("  Field value: ");
@@ -408,7 +338,7 @@ int main(int argc, char *argv[]) {
                     printf("  Error: Failed to set field.\n");
                 }
 
-                // Sécurité : effacer la valeur locale du mot de passe s'il est sensible
+                // Security: Wipe stack variables
                 if (is_sens) {
                     sodium_memzero(f_val, sizeof(f_val));
                 }
@@ -416,7 +346,7 @@ int main(int argc, char *argv[]) {
                 sodium_memzero(f_name, sizeof(f_name));
             }
 
-            // Sauvegarde automatique
+            // Autosave changes
             if (vault_save(vault, filepath, key, salt) == 0) {
                 printf("[+] Secret '%s' added and vault saved.\n", arg);
             } else {
@@ -431,7 +361,6 @@ int main(int argc, char *argv[]) {
             if (vault_delete_entry(vault, arg) != 0) {
                 printf("Error: Secret '%s' not found.\n", arg);
             } else {
-                // Sauvegarde automatique après suppression
                 if (vault_save(vault, filepath, key, salt) == 0) {
                     printf("[+] Secret '%s' deleted and vault saved.\n", arg);
                 } else {
@@ -474,7 +403,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // 4. Nettoyage de fin de session en RAM
+    // Secure session cleanup in RAM
     vault_free(vault);
     sodium_memzero(key, sizeof(key));
     printf("[+] Session RAM wiped cleanly.\n");

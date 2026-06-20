@@ -4,57 +4,57 @@ CC = gcc
 CFLAGS = -Wall -Wextra -Wpedantic -O2 -g $(shell pkg-config --cflags libsodium 2>/dev/null || echo "")
 LDFLAGS = $(shell pkg-config --libs libsodium 2>/dev/null || echo "-lsodium")
 
-# Dossiers du projet
+# Project directories
 SRC_DIR = src
 OBJ_DIR = obj
 TARGET = passmgr
 
-# Variables pour Native Messaging (Firefox)
+# Native messaging host installation variables
 HOST_NAME = passmgr
 MANIFEST_SRC = passmgr.json.template
 MANIFEST_DIR = $(HOME)/.mozilla/native-messaging-hosts
 MANIFEST_DEST = $(MANIFEST_DIR)/$(HOST_NAME).json
 BINARY_ABS_PATH = $(abspath $(TARGET))
 
-# Liste des sources et objets
+# Sources and objects list
 SRCS = $(wildcard $(SRC_DIR)/*.c)
 OBJS = $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(SRCS))
 
-.PHONY: all clean debug sanitize install-native
+.PHONY: all clean debug sanitize install-native help
 
 all: $(TARGET)
 
-# Liaison de l'exécutable principal
+# Link the main executable
 $(TARGET): $(OBJS)
 	$(CC) $(OBJS) -o $(TARGET) $(LDFLAGS)
 
-# Compilation des fichiers objets
+# Compile object files
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | $(OBJ_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(OBJ_DIR):
 	mkdir -p $(OBJ_DIR)
 
-# Cible avec AddressSanitizer et UndefinedBehaviorSanitizer activés (Étape 8)
+# Target with AddressSanitizer and UndefinedBehaviorSanitizer enabled
 sanitize: CFLAGS += -fsanitize=address,undefined -fno-omit-frame-pointer
 sanitize: LDFLAGS += -fsanitize=address,undefined
 sanitize: clean $(TARGET)
 
-# Installer le manifest Native Messaging pour Firefox
+# Install Firefox Native Messaging host manifest
 install-native: $(TARGET)
 	@mkdir -p $(MANIFEST_DIR)
 	@sed "s|TARGET_PATH|$(BINARY_ABS_PATH)|g" $(MANIFEST_SRC) > $(MANIFEST_DEST)
-	@echo "[+] Manifest native messaging installe dans : $(MANIFEST_DEST)"
-	@echo "    Chemin absolu vers l'executable : $(BINARY_ABS_PATH)"
+	@echo "[+] Native messaging manifest installed at: $(MANIFEST_DEST)"
+	@echo "    Absolute binary path: $(BINARY_ABS_PATH)"
 
-# Nettoyage des objets et de l'exécutable
+# Clean build artifacts
 clean:
 	rm -rf $(OBJ_DIR) $(TARGET)
 
-# Aide à la compilation et aux commandes
+# Help menu
 help:
-	@echo "Commandes disponibles :"
-	@echo "  make          : Compile le projet"
-	@echo "  make sanitize : Compile avec AddressSanitizer"
-	@echo "  make clean    : Supprime les fichiers objets et l'exécutable"
-	@echo "  make install-native : Installe le manifest native messaging pour Firefox"
+	@echo "Available commands:"
+	@echo "  make                : Compile the project"
+	@echo "  make sanitize       : Compile with AddressSanitizer"
+	@echo "  make install-native : Install Firefox Native Messaging manifest"
+	@echo "  make clean          : Remove build objects and binary"

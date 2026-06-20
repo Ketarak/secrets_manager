@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-
+/* Helper function to duplicate a string using secure sodium memory allocator */
 static char *sodium_strdup(const char *s) {
     if (!s) return NULL;
     size_t len = strlen(s);
@@ -16,36 +16,32 @@ static char *sodium_strdup(const char *s) {
     return copy;
 }
 
-// Écrit un entier 16-bit en Big-Endian dans le buffer
+/* Write a 16-bit unsigned integer in Big-Endian format to the buffer */
 static void write_uint16(unsigned char *buf, uint16_t val) {
     buf[0] = (val >> 8) & 0xFF;
     buf[1] = val & 0xFF;
 }
-// Écrit un entier 32-bit en Big-Endian dans le buffer
+
+/* Write a 32-bit unsigned integer in Big-Endian format to the buffer */
 static void write_uint32(unsigned char *buf, uint32_t val) {
     buf[0] = (val >> 24) & 0xFF;
     buf[1] = (val >> 16) & 0xFF;
     buf[2] = (val >> 8) & 0xFF;
     buf[3] = val & 0xFF;
 }
-// Lit un entier 16-bit Big-Endian depuis le buffer
+
+/* Read a 16-bit unsigned integer in Big-Endian format from the buffer */
 static uint16_t read_uint16(const unsigned char *buf) {
     return (uint16_t)((buf[0] << 8) | buf[1]);
 }
-// Lit un entier 32-bit Big-Endian depuis le buffer
+
+/* Read a 32-bit unsigned integer in Big-Endian format from the buffer */
 static uint32_t read_uint32(const unsigned char *buf) {
     return (uint32_t)((buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3]);
 }
 
 Vault *vault_create(void) {
-    /*
-     * TODO : Étape 3a
-     * 1. Allouer la structure Vault (avec sodium_malloc de préférence).
-     * 2. Initialiser count = 0 et capacity = 4 (ou autre valeur initiale).
-     * 3. Allouer le tableau entries avec sodium_allocarray(capacity, sizeof(Entry)).
-     * 4. Initialiser à zéro (avec memset) le tableau d'entrées.
-     * 5. Retourner le pointeur Vault.
-     */
+    /* Allocate and initialize a new Vault structure in memory */
     Vault *vault = (Vault *)sodium_malloc(sizeof(Vault));
     if (!vault) {
         fprintf(stderr, "Error: Failed to allocate memory for Vault.\n");
@@ -65,20 +61,7 @@ Vault *vault_create(void) {
 }
 
 void vault_free(Vault *vault) {
-    /*
-     * TODO : Étape 3b
-     * 1. Vérifier si vault est NULL.
-     * 2. Boucler sur toutes les entrées i de 0 à vault->count - 1 :
-     *    a. Libérer le titre et le type de l'entrée.
-     *    b. Boucler sur tous les champs j de 0 à entry.count - 1 :
-     *       - Si le champ ou la valeur est sensible (ou par précaution pour tous les champs) :
-     *         effacer activement la mémoire de la valeur avec sodium_memzero(field.value, strlen(field.value))
-     *         avant de la libérer.
-     *       - Libérer field.name et field.value.
-     *    c. Libérer le tableau entry.fields (avec sodium_free).
-     * 3. Libérer le tableau d'entrées vault->entries.
-     * 4. Libérer la structure vault.
-     */
+    /* Securely release all allocated memory inside the Vault structure */
     if (!vault) {
         return;
     }
@@ -89,10 +72,11 @@ void vault_free(Vault *vault) {
         while (entry->count > 0) {
             Field *field = &entry->fields[entry->count - 1];
             if (field->is_sensitive && field->value) {
+                /* Explicitly overwrite sensitive parameters before freeing */
                 sodium_memzero(field->value, strlen(field->value));
             }
-                sodium_free(field->name);
-                sodium_free(field->value);
+            sodium_free(field->name);
+            sodium_free(field->value);
             entry->count--;
         }
         sodium_free(entry->fields);
@@ -103,26 +87,8 @@ void vault_free(Vault *vault) {
 }
 
 Entry *vault_add_entry(Vault *vault, const char *title, const char *type) {
-    /*
-     * TODO : Étape 3c
-     * 1. Vérifier si une entrée avec le même titre existe déjà via vault_find_entry().
-     *    Si oui, renvoyer NULL (les doublons de titre ne sont pas autorisés).
-     * 2. Si count >= capacity :
-     *    - Doubler la capacité (capacity = capacity * 2).
-     *    - Allouer un nouveau tableau d'entrées de taille capacity.
-     *    - Copier les anciennes entrées.
-     *    - Libérer l'ancien tableau d'entrées (attention à ne pas libérer les sous-pointeurs !).
-     *    - Remplacer vault->entries par le nouveau tableau.
-     * 3. Récupérer un pointeur vers la nouvelle entrée vide : Entry *entry = &vault->entries[vault->count].
-     * 4. Allouer et copier entry->title = strdup(title) (ou sodium_malloc).
-     * 5. Allouer et copier entry->type = strdup(type).
-     * 6. Initialiser entry->count = 0, entry->capacity = 4.
-     * 7. Allouer entry->fields = sodium_allocarray(entry->capacity, sizeof(Field)).
-     * 8. Initialiser le tableau de champs à zéro.
-     * 9. Incrémenter vault->count.
-     * 10. Retourner le pointeur entry.
-     */
-     if (vault_find_entry(vault, title) != NULL) {
+    /* Add a new entry to the vault, resizing the dynamic array if necessary */
+    if (vault_find_entry(vault, title) != NULL) {
         fprintf(stderr, "Error: Entry with title '%s' already exists.\n", title);
         return NULL;
     }
@@ -162,25 +128,7 @@ Entry *vault_add_entry(Vault *vault, const char *title, const char *type) {
 }
 
 int entry_set_field(Entry *entry, const char *name, const char *value, int is_sensitive) {
-    /*
-     * TODO : Étape 3d
-     * 1. Rechercher si un champ avec le même 'name' existe déjà via entry_find_field().
-     *    - Si oui :
-     *      - Effacer l'ancienne valeur avec sodium_memzero.
-     *      - Libérer l'ancienne valeur.
-     *      - Allouer et copier la nouvelle valeur dans field->value.
-     *      - Mettre à jour field->is_sensitive = is_sensitive.
-     *      - Retourner 0.
-     * 2. Si le champ n'existe pas encore :
-     *    - Vérifier si entry->count >= entry->capacity.
-     *    - Si oui, augmenter la capacité (capacity * 2) et réallouer entry->fields.
-     *    - Récupérer Field *field = &entry->fields[entry->count].
-     *    - Allouer et copier field->name = strdup(name).
-     *    - Allouer et copier field->value = strdup(value) (ou utiliser sodium_malloc pour les valeurs sensibles).
-     *    - Configurer field->is_sensitive = is_sensitive.
-     *    - Incrémenter entry->count.
-     *    - Retourner 0.
-     */
+    /* Insert or update a field inside a vault Entry */
     Field *field = entry_find_field(entry, name);
     if (field != NULL) {
         char *new_value = sodium_strdup(value);
@@ -224,12 +172,7 @@ int entry_set_field(Entry *entry, const char *name, const char *value, int is_se
 }
 
 Entry *vault_find_entry(Vault *vault, const char *title) {
-    /*
-     * TODO : Étape 3e
-     * 1. Parcourir les entrées de 0 à vault->count - 1.
-     * 2. Si strcmp(entry.title, title) == 0, retourner le pointeur vers cette entrée.
-     * 3. Retourner NULL si non trouvé.
-     */
+    /* Search for an entry by its unique title name */
     for (size_t i = 0; i < vault->count; i++) {
         if (strcmp(vault->entries[i].title, title) == 0) {
             return &vault->entries[i];
@@ -239,12 +182,7 @@ Entry *vault_find_entry(Vault *vault, const char *title) {
 }
 
 Field *entry_find_field(Entry *entry, const char *name) {
-    /*
-     * TODO : Étape 3f
-     * 1. Parcourir les champs de l'entrée de 0 à entry->count - 1.
-     * 2. Si strcmp(field.name, name) == 0, retourner le pointeur vers ce champ.
-     * 3. Retourner NULL si non trouvé.
-     */
+    /* Search for a field by its name inside an entry */
     for (size_t i = 0; i < entry->count; i++) {
         if (strcmp(entry->fields[i].name, name) == 0) {
             return &entry->fields[i];
@@ -254,16 +192,7 @@ Field *entry_find_field(Entry *entry, const char *name) {
 }
 
 int vault_delete_entry(Vault *vault, const char *title) {
-    /*
-     * TODO : Étape 3g
-     * 1. Trouver l'index de l'entrée correspondant au titre.
-     * 2. Si non trouvée, retourner -1.
-     * 3. Libérer la mémoire de cette entrée (en effaçant les valeurs sensibles avec sodium_memzero d'abord).
-     * 4. Décaler les entrées suivantes vers la gauche pour combler le vide.
-     * 5. Décrémenter vault->count.
-     * 6. Retourner 0.
-     */
-
+    /* Delete an entry and shift the remaining ones to fill the slot */
     Entry *entry = vault_find_entry(vault, title);
     
     if (entry == NULL) {
@@ -291,42 +220,22 @@ int vault_delete_entry(Vault *vault, const char *title) {
 }
 
 int vault_serialize(const Vault *vault, unsigned char **out_buf, size_t *out_len) {
-    /*
-     * TODO : Étape 4a (Sérialisation récursive)
-     * 1. Calculer la taille totale requise pour le buffer.
-     *    Taille = 1o (version) + 4o (nb d'entrées)
-     *    Pour chaque entrée :
-     *      + 2o (titre len) + titre len
-     *      + 2o (type len) + type len
-     *      + 2o (nb de champs)
-     *      Pour chaque champ de l'entrée :
-     *        + 2o (nom len) + nom len
-     *        + 4o (valeur len) + valeur len
-     *        + 1o (is_sensitive flag)
-     * 2. Allouer out_buf avec la taille calculée (avec sodium_malloc).
-     * 3. Écrire la version (VAULT_VERSION) et vault->count dans le buffer.
-     * 4. Boucler pour copier chaque entrée et ses champs dans le buffer plat, 
-     *    en écrivant d'abord la longueur de chaque chaîne puis la chaîne elle-même.
-     *    (Utiliser des fonctions comme htons/htonl ou écrire octet par octet pour être indépendant de l'endianness).
-     * 5. Remplir out_len avec la taille totale écrite.
-     * 6. Retourner 0 en cas de succès, -1 en cas d'erreur.
-     */
-
-    size_t total_size = 5; // Version + Nb d'entrées
+    /* Serialize the dynamic vault structure into a flat TLV binary buffer */
+    size_t total_size = 5; // 1-byte version + 4-byte count
     for (size_t i = 0; i < vault->count; i++) {
         Entry *entry = &vault->entries[i];
-        total_size += 2 + strlen(entry->title); // Titre len + titre
-        total_size += 2 + strlen(entry->type);  // Type len + type
-        total_size += 2; // Nb de champs
+        total_size += 2 + strlen(entry->title); // 2-byte title length + title string
+        total_size += 2 + strlen(entry->type);  // 2-byte type length + type string
+        total_size += 2; // 2-byte fields count
         for (size_t j = 0; j < entry->count; j++) {
             Field *field = &entry->fields[j];
-            total_size += 2 + strlen(field->name);  // Nom len + nom
-            total_size += 4 + strlen(field->value); // Valeur len + valeur
-            total_size += 1; // IsSensitive flag
+            total_size += 2 + strlen(field->name);  // 2-byte name length + name string
+            total_size += 4 + strlen(field->value); // 4-byte value length + value string
+            total_size += 1; // 1-byte sensitivity flag
         }
     }
 
-    *out_buf = (unsigned char *)sodium_malloc(total_size); // Version + Nb d'entrées
+    *out_buf = (unsigned char *)sodium_malloc(total_size);
     if (*out_buf == NULL) {
         return -1;
     }
@@ -379,6 +288,7 @@ int vault_serialize(const Vault *vault, unsigned char **out_buf, size_t *out_len
 }
 
 Vault *vault_deserialize(const unsigned char *buf, size_t len) {
+    /* Reconstruct a Vault object from a flat TLV binary buffer */
     if (buf == NULL || len < 5) {
         return NULL;
     }
@@ -502,14 +412,7 @@ error:
 }
 
 int vault_save(const Vault *vault, const char *filepath, const unsigned char *key, const unsigned char *salt) {
-    /*
-     * TODO : Étape 5c
-     * Identique à l'implémentation précédente :
-     * 1. Sérialiser (vault_serialize).
-     * 2. Chiffrer (encrypt_data).
-     * 3. Écrire dans filepath.tmp : Salt (16o) + Nonce (24o) + Ciphertext.
-     * 4. Remplacer le fichier original par rename().
-     */
+    /* Serialize and encrypt the vault, writing atomically via a temporary file */
     unsigned char *serialized_buf = NULL;
     size_t serialized_len = 0;
 
@@ -572,32 +475,28 @@ int vault_save(const Vault *vault, const char *filepath, const unsigned char *ke
 }
 
 Vault *vault_load(const char *filepath, const unsigned char *key, unsigned char *out_salt) {
+    /* Read, decrypt and deserialize the vault file from disk */
     FILE *fp = fopen(filepath, "rb");
     if (!fp) {
-        // C'est normal si le fichier n'existe pas encore (première exécution)
         return NULL;
     }
 
-    // 1. Calcul de la taille totale du fichier
     fseek(fp, 0, SEEK_END);
     long file_size = ftell(fp);
     fseek(fp, 0, SEEK_SET);
 
-    // Taille minimale requise : Salt (16o) + Nonce (24o) + Tag MAC (16o) = 56o
     if (file_size < (long)(SALT_SIZE + NONCE_SIZE + crypto_secretbox_MACBYTES)) {
         fprintf(stderr, "Error: Vault file is too small or corrupted.\n");
         fclose(fp);
         return NULL;
     }
 
-    // 2. Lecture du Salt public
     if (fread(out_salt, 1, SALT_SIZE, fp) != SALT_SIZE) {
         fprintf(stderr, "Error: Failed to read salt.\n");
         fclose(fp);
         return NULL;
     }
 
-    // 3. Lecture du Nonce
     unsigned char nonce[NONCE_SIZE];
     if (fread(nonce, 1, NONCE_SIZE, fp) != NONCE_SIZE) {
         fprintf(stderr, "Error: Failed to read nonce.\n");
@@ -605,7 +504,6 @@ Vault *vault_load(const char *filepath, const unsigned char *key, unsigned char 
         return NULL;
     }
 
-    // 4. Lecture du Ciphertext restant
     size_t ciphertext_len = file_size - SALT_SIZE - NONCE_SIZE;
     unsigned char *ciphertext = (unsigned char *)sodium_malloc(ciphertext_len);
     if (!ciphertext) {
@@ -621,9 +519,8 @@ Vault *vault_load(const char *filepath, const unsigned char *key, unsigned char 
         return NULL;
     }
 
-    fclose(fp); // On peut fermer le fichier car tout a été chargé en RAM
+    fclose(fp);
 
-    // 5. Déchiffrement
     size_t plaintext_len = ciphertext_len - crypto_secretbox_MACBYTES;
     unsigned char *plaintext = (unsigned char *)sodium_malloc(plaintext_len);
     if (!plaintext) {
@@ -639,12 +536,10 @@ Vault *vault_load(const char *filepath, const unsigned char *key, unsigned char 
         return NULL;
     }
 
-    sodium_free(ciphertext); // Plus besoin du chiffré
+    sodium_free(ciphertext);
 
-    // 6. Désérialisation pour reconstruire le coffre en mémoire
     Vault *vault = vault_deserialize(plaintext, plaintext_len);
 
-    // Sécurité : effacer le tampon en clair
     sodium_memzero(plaintext, plaintext_len);
     sodium_free(plaintext);
 

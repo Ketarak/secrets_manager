@@ -7,7 +7,7 @@
 #include <stdint.h>
 #include <string.h>
 
-
+/* Extract a string value for a key in a flat JSON structure, decoding escapes */
 static int get_json_string_value(const char *json, const char *key, char *out_val, size_t max_len) {
     char key_pattern[256];
     snprintf(key_pattern, sizeof(key_pattern), "\"%s\"", key);
@@ -20,14 +20,17 @@ static int get_json_string_value(const char *json, const char *key, char *out_va
     if (!p) return -1;
     p++;
     
+    // Skip spaces
     while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
-
+    
+    // Expect string starting quote
     if (*p != '"') return -1;
     p++;
     
     const char *start = p;
     size_t len = 0;
     
+    // Find unescaped closing quote
     while (*p != '\0') {
         if (*p == '"') {
             int backslashes = 0;
@@ -37,15 +40,16 @@ static int get_json_string_value(const char *json, const char *key, char *out_va
                 b--;
             }
             if (backslashes % 2 == 0) {
-                break; 
+                break;
             }
         }
         len++;
         p++;
     }
     
-    if (*p != '"') return -1; // JSON malformé
+    if (*p != '"') return -1;
     
+    // Copy and decode escape sequences
     size_t d = 0;
     for (size_t s = 0; s < len && d < max_len - 1; s++) {
         if (start[s] == '\\') {
@@ -70,6 +74,7 @@ static int get_json_string_value(const char *json, const char *key, char *out_va
     return 0;
 }
 
+/* Escape special characters of a string for standard JSON output */
 static void escape_json_string(const char *src, char *dst, size_t max_len) {
     size_t d = 0;
     for (size_t s = 0; src[s] != '\0' && d < max_len - 4; s++) {
@@ -107,18 +112,22 @@ int native_messaging_loop(const char *filepath) {
     unsigned char key[KEY_SIZE];
     int is_unlocked = 0;
 
+    // Endless messaging loop
     while (1) {
         uint32_t length = 0;
         
+        // 1. Read message length (4 bytes, native endianness)
         if (fread(&length, 1, 4, stdin) != 4) {
-            break; 
+            break; // Connection closed by Firefox (normal EOF)
         }
 
+        // Safety limit: reject abnormally large messages (e.g. > 1 MB)
         if (length > 1024 * 1024) {
             fprintf(stderr, "[Native] Error: Message too large (%u bytes).\n", length);
             break;
         }
 
+        // 2. Allocate buffer for incoming JSON payload
         char *json_buf = (char *)sodium_malloc(length + 1);
         if (!json_buf) {
             fprintf(stderr, "[Native] Error: Memory allocation failure.\n");
@@ -132,11 +141,13 @@ int native_messaging_loop(const char *filepath) {
         }
         json_buf[length] = '\0';
 
+        // 3. Extract the requested action
         char action[64] = "";
         get_json_string_value(json_buf, "action", action, sizeof(action));
 
         char response[8192] = "";
 
+        // 4. Handle incoming requests
         if (strcmp(action, "unlock") == 0) {
             char password[256] = "";
             get_json_string_value(json_buf, "password", password, sizeof(password));
@@ -189,6 +200,37 @@ int native_messaging_loop(const char *filepath) {
                 snprintf(response, sizeof(response), "{\"status\":\"locked\"}");
             }
 
+        } else if (strcmp(action, "list") == 0) {
+            if (!is_unlocked) {
+                snprintf(response, sizeof(response), "{\"status\":\"error\",\"message\":\"Vault is locked\"}");
+            } else {
+                size_t resp_cap = 16384;
+                char *dyn_response = (char *)sodium_malloc(resp_cap);
+                if (!dyn_response) {
+                    snprintf(response, sizeof(response), "{\"status\":\"error\",\"message\":\"Memory allocation error\"}");
+                } else {
+                    size_t offset = snprintf(dyn_response, resp_cap, "{\"status\":\"success\",\"secrets\":[");
+                    for (size_t i = 0; i < vault->count; i++) {
+                        char escaped_title[512] = "";
+                        escape_json_string(vault->entries[i].title, escaped_title, sizeof(escaped_title));
+                        offset += snprintf(dyn_response + offset, resp_cap - offset,
+                                           "%s{\"title\":\"%s\",\"type\":\"%s\"}",
+                                           i > 0 ? "," : "",
+                                           escaped_title,
+                                           vault->entries[i].type ? vault->entries[i].type : "none");
+                    }
+                    snprintf(dyn_response + offset, resp_cap - offset, "]}");
+                    
+                    uint32_t resp_len = strlen(dyn_response);
+                    fwrite(&resp_len, 1, 4, stdout);
+                    fwrite(dyn_response, 1, resp_len, stdout);
+                    fflush(stdout);
+                    
+                    sodium_free(dyn_response);
+                    response[0] = '\0'; // Already sent
+                }
+            }
+
         } else if (strcmp(action, "get") == 0) {
             if (!is_unlocked) {
                 snprintf(response, sizeof(response), "{\"status\":\"error\",\"message\":\"Vault is locked\"}");
@@ -238,7 +280,7 @@ int native_messaging_loop(const char *filepath) {
                         fflush(stdout);
                         
                         sodium_free(dyn_response);
-                        response[0] = '\0'; 
+                        response[0] = '\0'; // Already sent
                     }
                 }
             }
@@ -248,6 +290,7 @@ int native_messaging_loop(const char *filepath) {
 
         sodium_free(json_buf);
 
+        // 5. Send static response if not dynamically sent
         if (response[0] != '\0') {
             uint32_t resp_len = strlen(response);
             fwrite(&resp_len, 1, 4, stdout);
@@ -256,6 +299,7 @@ int native_messaging_loop(const char *filepath) {
         }
     }
 
+    // Secure memory cleanup on loop exit
     if (is_unlocked && vault) {
         vault_free(vault);
         sodium_memzero(key, sizeof(key));
