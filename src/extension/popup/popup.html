@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Secrets Manager</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="logo-area">
+        <svg class="header-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+        </svg>
+        <h1>passmgr</h1>
+      </div>
+      <div class="status-indicator">
+        <span id="status-dot" class="dot locked"></span>
+        <span id="status-text">Verrouillé</span>
+      </div>
+    </header>
+
+    <!-- Écran : Coffre Verrouillé -->
+    <div id="locked-view" class="view-panel active">
+      <div class="unlock-hero">
+        <div class="shield-circle">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+          </svg>
+        </div>
+        <h2>Déverrouiller le coffre</h2>
+        <p>Entrez votre mot de passe maître pour accéder à vos secrets.</p>
+      </div>
+
+      <form id="unlock-form" class="interactive-form">
+        <div class="input-wrapper">
+          <input type="password" id="master-password" placeholder="Mot de passe maître" required autocomplete="current-password">
+          <button type="button" id="toggle-master-pwd" class="input-icon-btn">
+            <svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+          </button>
+        </div>
+        <button type="submit" id="unlock-btn" class="btn btn-primary">Déverrouiller</button>
+      </form>
+      <div id="unlock-error" class="error-msg hidden"></div>
+    </div>
+
+    <!-- Écran : Coffre Déverrouillé -->
+    <div id="unlocked-view" class="view-panel hidden">
+      <!-- Écran de recherche principale -->
+      <div id="search-subview" class="subview">
+        <div class="search-bar">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input type="text" id="search-input" placeholder="Rechercher un secret...">
+        </div>
+
+        <!-- Liste des secrets -->
+        <div class="secrets-list-container">
+          <ul id="secrets-list">
+            <!-- Rempli dynamiquement -->
+          </ul>
+          <div id="no-secrets-msg" class="empty-state hidden">Aucun secret trouvé</div>
+        </div>
+
+        <footer class="unlocked-footer">
+          <button id="lock-btn" class="btn btn-secondary">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+            Verrouiller
+          </button>
+        </footer>
+      </div>
+
+      <!-- Écran de détail d'un secret -->
+      <div id="detail-subview" class="subview hidden">
+        <button id="back-to-list-btn" class="back-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="19" y1="12" x2="5" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
+          </svg>
+          Retour à la liste
+        </button>
+
+        <div class="secret-details-card">
+          <div class="detail-header">
+            <div id="detail-secret-icon" class="type-icon-box"></div>
+            <div>
+              <h2 id="detail-title">Titre</h2>
+              <span id="detail-type" class="badge">Type</span>
+            </div>
+          </div>
+
+          <div id="detail-fields-list" class="fields-list">
+            <!-- Rempli dynamiquement -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

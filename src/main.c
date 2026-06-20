@@ -110,7 +110,19 @@ int main(int argc, char *argv[]) {
      * 
      * 5. S'assurer de nettoyer toutes les clés et variables sensibles avec sodium_memzero avant de quitter.
      */
-    const char *filepath = "vault.enc"; // Default vault file path
+    char default_path[2048] = "vault.enc";
+    char bin_path[1024];
+    // Lit le chemin réel du binaire exécuté (spécifique à Linux)
+    ssize_t link_len = readlink("/proc/self/exe", bin_path, sizeof(bin_path) - 1);
+    if (link_len != -1) {
+        bin_path[link_len] = '\0';
+        char *dir = strrchr(bin_path, '/');
+        if (dir) {
+            *dir = '\0'; // Coupe le nom du binaire pour garder le répertoire
+            snprintf(default_path, sizeof(default_path), "%s/vault.enc", bin_path);
+        }
+    }
+    const char *filepath = default_path;
     int native_mode = 0;
 
     crypto_init();
@@ -140,6 +152,15 @@ int main(int argc, char *argv[]) {
             default:
                 fprintf(stderr, "Usage: %s [options]\n", argv[0]);
                 return 1;
+        }
+    }
+
+    // Si un argument se termine par ".json" (Firefox passant le chemin du manifeste),
+    // on active automatiquement le mode Native Messaging.
+    for (int i = optind; i < argc; i++) {
+        size_t arg_len = strlen(argv[i]);
+        if (arg_len > 5 && strcmp(argv[i] + arg_len - 5, ".json") == 0) {
+            native_mode = 1;
         }
     }
 
