@@ -290,6 +290,7 @@ int main(int argc, char *argv[]) {
             printf("  show <title>     Show details of a secret\n");
             printf("  add <title>      Add a new secret interactively\n");
             printf("  delete <title>   Delete a secret\n");
+            printf("  destroy          Delete the vault file from disk and quit\n");
             printf("  exit / quit      Wipe RAM and quit\n");
 
         } else if (strcmp(command, "list") == 0) {
@@ -416,6 +417,32 @@ int main(int argc, char *argv[]) {
                     printf("Error: Failed to auto-save changes.\n");
                 }
             }
+
+        } else if (strcmp(command, "destroy") == 0) {
+            char confirm[16] = "";
+            printf("WARNING: This will permanently delete the vault file '%s' and all its contents!\n", filepath);
+            printf("Are you absolutely sure you want to proceed? (type 'yes' to confirm): ");
+            fflush(stdout);
+            if (fgets(confirm, sizeof(confirm), stdin) == NULL) {
+                sodium_memzero(confirm, sizeof(confirm));
+                continue;
+            }
+            size_t conf_len = strlen(confirm);
+            if (conf_len > 0 && confirm[conf_len - 1] == '\n') {
+                confirm[conf_len - 1] = '\0';
+            }
+            if (strcmp(confirm, "yes") == 0) {
+                if (remove(filepath) == 0) {
+                    printf("[+] Vault file successfully deleted from disk.\n");
+                    sodium_memzero(confirm, sizeof(confirm));
+                    break;
+                } else {
+                    perror("Error: Failed to delete vault file");
+                }
+            } else {
+                printf("Action cancelled.\n");
+            }
+            sodium_memzero(confirm, sizeof(confirm));
 
         } else if (strcmp(command, "exit") == 0 || strcmp(command, "quit") == 0) {
             printf("Locking vault and exiting. Goodbye!\n");
