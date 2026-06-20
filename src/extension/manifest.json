@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Secrets Manager (passmgr)",
+  "version": "1.0",
+  "description": "Gestionnaire de secrets local et sécurisé utilisant Native Messaging.",
+  "permissions": [
+    "nativeMessaging",
+    "storage"
+  ],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "action": {
+    "default_popup": "popup/popup.html"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "passmgr@maxime.projets",
+      "strict_min_version": "109.0"
+    }
+  }
+}

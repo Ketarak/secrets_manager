@@ -9,11 +9,18 @@ SRC_DIR = src
 OBJ_DIR = obj
 TARGET = passmgr
 
+# Variables pour Native Messaging (Firefox)
+HOST_NAME = passmgr
+MANIFEST_SRC = passmgr.json.template
+MANIFEST_DIR = $(HOME)/.mozilla/native-messaging-hosts
+MANIFEST_DEST = $(MANIFEST_DIR)/$(HOST_NAME).json
+BINARY_ABS_PATH = $(abspath $(TARGET))
+
 # Liste des sources et objets
 SRCS = $(wildcard $(SRC_DIR)/*.c)
 OBJS = $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(SRCS))
 
-.PHONY: all clean debug sanitize
+.PHONY: all clean debug sanitize install-native
 
 all: $(TARGET)
 
@@ -33,6 +40,13 @@ sanitize: CFLAGS += -fsanitize=address,undefined -fno-omit-frame-pointer
 sanitize: LDFLAGS += -fsanitize=address,undefined
 sanitize: clean $(TARGET)
 
+# Installer le manifest Native Messaging pour Firefox
+install-native: $(TARGET)
+	@mkdir -p $(MANIFEST_DIR)
+	@sed "s|TARGET_PATH|$(BINARY_ABS_PATH)|g" $(MANIFEST_SRC) > $(MANIFEST_DEST)
+	@echo "[+] Manifest native messaging installe dans : $(MANIFEST_DEST)"
+	@echo "    Chemin absolu vers l'executable : $(BINARY_ABS_PATH)"
+
 # Nettoyage des objets et de l'exécutable
 clean:
 	rm -rf $(OBJ_DIR) $(TARGET)
@@ -43,3 +57,4 @@ help:
 	@echo "  make          : Compile le projet"
 	@echo "  make sanitize : Compile avec AddressSanitizer"
 	@echo "  make clean    : Supprime les fichiers objets et l'exécutable"
+	@echo "  make install-native : Installe le manifest native messaging pour Firefox"

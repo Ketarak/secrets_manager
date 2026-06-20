@@ -1,0 +1,10 @@
+{
+  "name": "passmgr",
+  "description": "Secure Secrets Manager Native Messaging Host",
+  "path": "TARGET_PATH",
+  "type": "stdio",
+  "allowed_extensions": 
+  [
+    "passmgr@maxime.projets"
+  ]
+}
