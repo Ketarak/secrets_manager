@@ -1,56 +1,265 @@
 #include "native.h"
 #include "vault.h"
 #include "crypto.h"
+#include <sodium.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
 
+
+static int get_json_string_value(const char *json, const char *key, char *out_val, size_t max_len) {
+    char key_pattern[256];
+    snprintf(key_pattern, sizeof(key_pattern), "\"%s\"", key);
+    
+    const char *p = strstr(json, key_pattern);
+    if (!p) return -1;
+    
+    p += strlen(key_pattern);
+    p = strchr(p, ':');
+    if (!p) return -1;
+    p++;
+    
+    while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+
+    if (*p != '"') return -1;
+    p++;
+    
+    const char *start = p;
+    size_t len = 0;
+    
+    while (*p != '\0') {
+        if (*p == '"') {
+            int backslashes = 0;
+            const char *b = p - 1;
+            while (b >= start && *b == '\\') {
+                backslashes++;
+                b--;
+            }
+            if (backslashes % 2 == 0) {
+                break; 
+            }
+        }
+        len++;
+        p++;
+    }
+    
+    if (*p != '"') return -1; // JSON malformé
+    
+    size_t d = 0;
+    for (size_t s = 0; s < len && d < max_len - 1; s++) {
+        if (start[s] == '\\') {
+            s++;
+            if (s >= len) break;
+            switch (start[s]) {
+                case '"':  out_val[d++] = '"';  break;
+                case '\\': out_val[d++] = '\\'; break;
+                case '/':  out_val[d++] = '/';  break;
+                case 'b':  out_val[d++] = '\b'; break;
+                case 'f':  out_val[d++] = '\f'; break;
+                case 'n':  out_val[d++] = '\n'; break;
+                case 'r':  out_val[d++] = '\r'; break;
+                case 't':  out_val[d++] = '\t'; break;
+                default:   out_val[d++] = start[s]; break;
+            }
+        } else {
+            out_val[d++] = start[s];
+        }
+    }
+    out_val[d] = '\0';
+    return 0;
+}
+
+static void escape_json_string(const char *src, char *dst, size_t max_len) {
+    size_t d = 0;
+    for (size_t s = 0; src[s] != '\0' && d < max_len - 4; s++) {
+        switch (src[s]) {
+            case '"':
+                dst[d++] = '\\'; dst[d++] = '"';
+                break;
+            case '\\':
+                dst[d++] = '\\'; dst[d++] = '\\';
+                break;
+            case '\n':
+                dst[d++] = '\\'; dst[d++] = 'n';
+                break;
+            case '\r':
+                dst[d++] = '\\'; dst[d++] = 'r';
+                break;
+            case '\t':
+                dst[d++] = '\\'; dst[d++] = 't';
+                break;
+            default:
+                if ((unsigned char)src[s] < 0x20) {
+                    d += snprintf(dst + d, max_len - d, "\\u%04x", (unsigned char)src[s]);
+                } else {
+                    dst[d++] = src[s];
+                }
+                break;
+        }
+    }
+    dst[d] = '\0';
+}
+
 int native_messaging_loop(const char *filepath) {
-    /*
-     * TODO : Phase 2 - Boucle Native Messaging
-     * 
-     * Cette boucle doit tourner indéfiniment tant que stdin est ouvert.
-     * 
-     * 1. Configurer stdin et stdout en mode binaire si nécessaire (sur Windows, 
-     *    mais sur Linux ce n'est pas strictement indispensable, bien qu'il faille
-     *    éviter toute interférence de printf classiques).
-     * 
-     * 2. Dans une boucle while(1) :
-     *    a. Lire 4 octets de stdin représentant la taille du message (uint32_t length).
-     *       - Si fread renvoie 0 ou < 4, cela signifie que la connexion est coupée (EOF).
-     *         C'est l'arrêt normal du programme. Sortir de la boucle proprement.
-     *    b. Allouer un buffer temporaire pour le message de taille (length + 1) octets.
-     *       Utiliser sodium_malloc pour les buffers de messages sensibles si nécessaire.
-     *    c. Lire 'length' octets depuis stdin dans ce buffer.
-     *       - Si la lecture échoue ou est incomplète, libérer le buffer et retourner -1.
-     *    d. Ajouter un caractère de fin de chaîne '\0' pour pouvoir manipuler le message comme une string.
-     *    e. Parser le JSON (ex: extraire le champ "action", "title", "password", etc.).
-     *       - Conseil : utiliser une lib JSON simple (cJSON, jsmn) ou écrire un parser minimaliste 
-     *         spécifique à notre besoin si on veut éviter les dépendances externes.
-     *    f. Traiter la requête en fonction de l'action :
-     *       - Action "unlock" :
-     *         - Dériver la clé à partir du mot de passe reçu.
-     *         - Tenter de charger et déchiffrer le Vault (vault_load).
-     *         - Si succès, garder le Vault déchiffré en RAM et renvoyer un JSON de succès {"status": "unlocked"}.
-     *         - Si échec, renvoyer {"status": "error", "message": "Wrong password"}.
-     *       - Action "get" :
-     *         - Si le Vault n'est pas déverrouillé, renvoyer {"status": "error", "message": "Locked"}.
-     *         - Rechercher le titre demandé (vault_find_entry).
-     *         - Si trouvé, renvoyer {"status": "success", "login": "...", "password": "..."}.
-     *         - Si non trouvé, renvoyer {"status": "error", "message": "Not found"}.
-     *       - Action "lock" :
-     *         - Libérer le Vault en RAM avec vault_free().
-     *         - Renvoyer {"status": "locked"}.
-     *    g. Envoyer la réponse JSON sur stdout :
-     *       - Calculer la taille de la réponse JSON en octets (strlen(response_json)).
-     *       - Écrire d'abord la taille en 4 octets (uint32_t) sur stdout (fwrite).
-     *       - Écrire la chaîne JSON (fwrite).
-     *       - Appeler fflush(stdout) pour forcer l'envoi immédiat du message à Firefox.
-     *       - Libérer les buffers temporaires et nettoyer les variables sensibles.
-     * 
-     * 3. Avant de quitter (fin de boucle), s'assurer que si un Vault était déverrouillé, 
-     *    il soit bien libéré de la mémoire RAM de manière sécurisée (vault_free).
-     */
-    return -1;
+    Vault *vault = NULL;
+    unsigned char salt[SALT_SIZE];
+    unsigned char key[KEY_SIZE];
+    int is_unlocked = 0;
+
+    while (1) {
+        uint32_t length = 0;
+        
+        if (fread(&length, 1, 4, stdin) != 4) {
+            break; 
+        }
+
+        if (length > 1024 * 1024) {
+            fprintf(stderr, "[Native] Error: Message too large (%u bytes).\n", length);
+            break;
+        }
+
+        char *json_buf = (char *)sodium_malloc(length + 1);
+        if (!json_buf) {
+            fprintf(stderr, "[Native] Error: Memory allocation failure.\n");
+            break;
+        }
+
+        if (fread(json_buf, 1, length, stdin) != length) {
+            fprintf(stderr, "[Native] Error: Failed to read complete message body.\n");
+            sodium_free(json_buf);
+            break;
+        }
+        json_buf[length] = '\0';
+
+        char action[64] = "";
+        get_json_string_value(json_buf, "action", action, sizeof(action));
+
+        char response[8192] = "";
+
+        if (strcmp(action, "unlock") == 0) {
+            char password[256] = "";
+            get_json_string_value(json_buf, "password", password, sizeof(password));
+
+            if (is_unlocked) {
+                snprintf(response, sizeof(response), "{\"status\":\"success\",\"message\":\"Already unlocked\"}");
+            } else {
+                FILE *f = fopen(filepath, "rb");
+                if (!f) {
+                    snprintf(response, sizeof(response), "{\"status\":\"error\",\"message\":\"Vault file not found\"}");
+                } else {
+                    if (fread(salt, 1, SALT_SIZE, f) != SALT_SIZE) {
+                        snprintf(response, sizeof(response), "{\"status\":\"error\",\"message\":\"Failed to read salt\"}");
+                        fclose(f);
+                    } else {
+                        fclose(f);
+                        if (derive_key(password, salt, key) != 0) {
+                            snprintf(response, sizeof(response), "{\"status\":\"error\",\"message\":\"Key derivation failed\"}");
+                        } else {
+                            unsigned char dummy_salt[SALT_SIZE];
+                            vault = vault_load(filepath, key, dummy_salt);
+                            if (!vault) {
+                                snprintf(response, sizeof(response), "{\"status\":\"error\",\"message\":\"Incorrect password\"}");
+                                sodium_memzero(key, sizeof(key));
+                            } else {
+                                is_unlocked = 1;
+                                snprintf(response, sizeof(response), "{\"status\":\"success\",\"message\":\"Vault unlocked\"}");
+                            }
+                        }
+                    }
+                }
+            }
+            sodium_memzero(password, sizeof(password));
+
+        } else if (strcmp(action, "lock") == 0) {
+            if (is_unlocked) {
+                vault_free(vault);
+                vault = NULL;
+                sodium_memzero(key, sizeof(key));
+                is_unlocked = 0;
+                snprintf(response, sizeof(response), "{\"status\":\"success\",\"message\":\"Vault locked\"}");
+            } else {
+                snprintf(response, sizeof(response), "{\"status\":\"error\",\"message\":\"Vault is already locked\"}");
+            }
+
+        } else if (strcmp(action, "status") == 0) {
+            if (is_unlocked) {
+                snprintf(response, sizeof(response), "{\"status\":\"unlocked\"}");
+            } else {
+                snprintf(response, sizeof(response), "{\"status\":\"locked\"}");
+            }
+
+        } else if (strcmp(action, "get") == 0) {
+            if (!is_unlocked) {
+                snprintf(response, sizeof(response), "{\"status\":\"error\",\"message\":\"Vault is locked\"}");
+            } else {
+                char title[256] = "";
+                get_json_string_value(json_buf, "title", title, sizeof(title));
+                
+                Entry *entry = vault_find_entry(vault, title);
+                if (!entry) {
+                    snprintf(response, sizeof(response), "{\"status\":\"error\",\"message\":\"Secret not found\"}");
+                } else {
+                    size_t resp_cap = 16384;
+                    char *dyn_response = (char *)sodium_malloc(resp_cap);
+                    if (!dyn_response) {
+                        snprintf(response, sizeof(response), "{\"status\":\"error\",\"message\":\"Memory allocation error\"}");
+                    } else {
+                        size_t offset = snprintf(dyn_response, resp_cap, 
+                                                 "{\"status\":\"success\",\"title\":\"%s\",\"type\":\"%s\",\"fields\":[",
+                                                 entry->title, entry->type ? entry->type : "none");
+                        
+                        for (size_t j = 0; j < entry->count; j++) {
+                            Field *field = &entry->fields[j];
+                            char escaped_name[512] = "";
+                            size_t esc_val_cap = strlen(field->value) * 6 + 1;
+                            char *escaped_value = (char *)sodium_malloc(esc_val_cap);
+                            
+                            if (escaped_value) {
+                                escape_json_string(field->name, escaped_name, sizeof(escaped_name));
+                                escape_json_string(field->value, escaped_value, esc_val_cap);
+                                
+                                offset += snprintf(dyn_response + offset, resp_cap - offset,
+                                                   "%s{\"name\":\"%s\",\"value\":\"%s\",\"is_sensitive\":%s}",
+                                                   j > 0 ? "," : "",
+                                                   escaped_name, escaped_value,
+                                                   field->is_sensitive ? "true" : "false");
+                                
+                                sodium_memzero(escaped_value, esc_val_cap);
+                                sodium_free(escaped_value);
+                            }
+                        }
+                        
+                        snprintf(dyn_response + offset, resp_cap - offset, "]}");
+                        
+                        uint32_t resp_len = strlen(dyn_response);
+                        fwrite(&resp_len, 1, 4, stdout);
+                        fwrite(dyn_response, 1, resp_len, stdout);
+                        fflush(stdout);
+                        
+                        sodium_free(dyn_response);
+                        response[0] = '\0'; 
+                    }
+                }
+            }
+        } else {
+            snprintf(response, sizeof(response), "{\"status\":\"error\",\"message\":\"Unknown action\"}");
+        }
+
+        sodium_free(json_buf);
+
+        if (response[0] != '\0') {
+            uint32_t resp_len = strlen(response);
+            fwrite(&resp_len, 1, 4, stdout);
+            fwrite(response, 1, resp_len, stdout);
+            fflush(stdout);
+        }
+    }
+
+    if (is_unlocked && vault) {
+        vault_free(vault);
+        sodium_memzero(key, sizeof(key));
+    }
+
+    return 0;
 }
