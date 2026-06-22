@@ -34,6 +34,11 @@ jobs:
         with:
           fetch-depth: 0 # Fetch all history for tags and commits
 
+      - name: Configure Git Identity
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
       - name: Determine and bump version
         id: versioning
         run: .github/scripts/release-bump.sh
