@@ -11,3 +11,5 @@ All application release notes are centralized here. The continuous integration w
 - **Firefox Extension**: Sleek glassmorphic interactive UI popup.
 - **Automated Test Suite**: Unit tests for the crypto layer and end-to-end integration tests for the CLI.
 - **Continuous Integration (GitHub Actions)**: Automated build validation and test suite execution (`make test`).
+- **Universal Installer Script (`install.sh`)**: Automated dependency check, compilation, local installation (`~/.local/bin`), and Firefox Native Messaging setup in one command.
+- **Project Documentation Revamp**: Fully rewritten README.md with detailed instructions for the installer, tests, and CLI usage.
