@@ -2,7 +2,7 @@
 
 All application release notes are centralized here. The continuous integration workflow uses this file to automatically generate the description for GitHub Releases.
 
-## [1.0.0]
+## [0.1.0]
 ### Key Features
 - **Secure Cryptographic Engine (C)**: Key derivation via **Argon2id** and symmetric encryption via **XSalsa20-Poly1305** (`libsodium`).
 - **Interactive REPL Console (`vault>`)**: Support for `list`, `add`, `show`, `delete`, `destroy`, and `exit` commands.
