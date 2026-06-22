@@ -40,8 +40,8 @@ if git rev-parse "v$VERSION" >/dev/null 2>&1; then
     echo "$NEW_VERSION" > VERSION
     
     # Configure git
-    git config user.name "github-actions[bot]"
-    git config user.email "github-actions[bot]@users.noreply.github.com"
+    git config --global user.name "github-actions[bot]"
+    git config --global user.email "github-actions[bot]@users.noreply.github.com"
     
     # Commit and push changes
     git add VERSION
