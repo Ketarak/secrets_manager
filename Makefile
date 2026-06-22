@@ -9,18 +9,22 @@ SRC_DIR = src
 OBJ_DIR = obj
 TARGET = passmgr
 
+# Installation directories
+PREFIX ?= $(HOME)/.local
+
 # Native messaging host installation variables
 HOST_NAME = passmgr
 MANIFEST_SRC = passmgr.json.template
 MANIFEST_DIR = $(HOME)/.mozilla/native-messaging-hosts
 MANIFEST_DEST = $(MANIFEST_DIR)/$(HOST_NAME).json
-BINARY_ABS_PATH = $(abspath $(TARGET))
+BINARY_DEST_PATH = $(PREFIX)/bin/$(TARGET)
+
 
 # Sources and objects list
 SRCS = $(wildcard $(SRC_DIR)/*.c)
 OBJS = $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(SRCS))
 
-.PHONY: all clean debug sanitize install-native help
+.PHONY: all clean debug sanitize install install-native help
 
 all: $(TARGET)
 
@@ -40,12 +44,18 @@ sanitize: CFLAGS += -fsanitize=address,undefined -fno-omit-frame-pointer
 sanitize: LDFLAGS += -fsanitize=address,undefined
 sanitize: clean $(TARGET)
 
+# Install binary to PREFIX
+install: $(TARGET)
+	@mkdir -p $(PREFIX)/bin
+	cp $(TARGET) $(PREFIX)/bin/$(TARGET)
+	@echo "[+] Installed $(TARGET) to $(PREFIX)/bin/$(TARGET)"
+
 # Install Firefox Native Messaging host manifest
 install-native: $(TARGET)
 	@mkdir -p $(MANIFEST_DIR)
-	@sed "s|TARGET_PATH|$(BINARY_ABS_PATH)|g" $(MANIFEST_SRC) > $(MANIFEST_DEST)
+	@sed "s|TARGET_PATH|$(BINARY_DEST_PATH)|g" $(MANIFEST_SRC) > $(MANIFEST_DEST)
 	@echo "[+] Native messaging manifest installed at: $(MANIFEST_DEST)"
-	@echo "    Absolute binary path: $(BINARY_ABS_PATH)"
+	@echo "    Pointing to: $(BINARY_DEST_PATH)"
 
 # Clean build artifacts
 clean:
@@ -67,5 +77,6 @@ help:
 	@echo "  make                : Compile the project"
 	@echo "  make sanitize       : Compile with AddressSanitizer"
 	@echo "  make test           : Run unit and integration tests"
+	@echo "  make install        : Install the C binary to PREFIX/bin"
 	@echo "  make install-native : Install Firefox Native Messaging manifest"
 	@echo "  make clean          : Remove build objects and binary"
