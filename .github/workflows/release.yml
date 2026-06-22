@@ -1,0 +1,62 @@
+name: Automated Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsodium-dev valgrind build-essential pkg-config
+
+      - name: Compile and run test suite
+        run: |
+          make clean
+          make test
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Needed to push tags and create releases
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # Fetch all history for tags and commits
+
+      - name: Determine and bump version
+        id: versioning
+        run: .github/scripts/release-bump.sh
+
+      - name: Extract Release Notes
+        id: notes
+        run: |
+          VERSION="${{ steps.versioning.outputs.version }}"
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          python3 .github/scripts/extract_release_notes.py "$VERSION" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create Git Tag
+        run: |
+          VERSION="${{ steps.versioning.outputs.version }}"
+          git tag -a "v$VERSION" -m "Release v$VERSION"
+          git push origin "v$VERSION"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: "v${{ steps.versioning.outputs.version }}"
+          name: "Release v${{ steps.versioning.outputs.version }}"
+          body: "${{ steps.notes.outputs.body }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
