@@ -49,12 +49,23 @@ install-native: $(TARGET)
 
 # Clean build artifacts
 clean:
-	rm -rf $(OBJ_DIR) $(TARGET)
+	rm -rf $(OBJ_DIR) $(TARGET) test_crypto
+
+# Run all tests (unit and integration)
+test: $(TARGET)
+	@echo "=== Building Unit Tests ==="
+	$(CC) $(CFLAGS) tests/test_crypto.c src/crypto.c -o test_crypto $(LDFLAGS)
+	@echo "=== Running Unit Tests ==="
+	./test_crypto
+	@echo "=== Running Integration Tests ==="
+	./tests/integration.sh
+	@rm -f test_crypto
 
 # Help menu
 help:
 	@echo "Available commands:"
 	@echo "  make                : Compile the project"
 	@echo "  make sanitize       : Compile with AddressSanitizer"
+	@echo "  make test           : Run unit and integration tests"
 	@echo "  make install-native : Install Firefox Native Messaging manifest"
 	@echo "  make clean          : Remove build objects and binary"

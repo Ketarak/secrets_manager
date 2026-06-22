@@ -14,20 +14,25 @@
  * Returns 0 on success, -1 on error.
  */
 static int read_password(char *buf, size_t max_len) {
+    int is_tty = isatty(STDIN_FILENO);
     struct termios old_t, new_t;
-    if (tcgetattr(STDIN_FILENO, &old_t) != 0) {
-        fprintf(stderr, "Error: Failed to get terminal attributes.\n");
-        return -1;
-    }
-    new_t = old_t;
-    new_t.c_lflag &= ~ECHO;
-    if (tcsetattr(STDIN_FILENO, TCSANOW, &new_t) != 0) {
-        fprintf(stderr, "Error: Failed to set terminal attributes.\n");
-        return -1;
+    if (is_tty) {
+        if (tcgetattr(STDIN_FILENO, &old_t) != 0) {
+            fprintf(stderr, "Error: Failed to get terminal attributes.\n");
+            return -1;
+        }
+        new_t = old_t;
+        new_t.c_lflag &= ~ECHO;
+        if (tcsetattr(STDIN_FILENO, TCSANOW, &new_t) != 0) {
+            fprintf(stderr, "Error: Failed to set terminal attributes.\n");
+            return -1;
+        }
     }
     if (fgets(buf, max_len, stdin) == NULL) {
         fprintf(stderr, "Error: Failed to read password.\n");
-        tcsetattr(STDIN_FILENO, TCSANOW, &old_t);
+        if (is_tty) {
+            tcsetattr(STDIN_FILENO, TCSANOW, &old_t);
+        }
         return -1;
     }
     // Remove the trailing newline if present
@@ -36,11 +41,13 @@ static int read_password(char *buf, size_t max_len) {
         buf[len - 1] = '\0';
     }
     // Restore original terminal attributes
-    if (tcsetattr(STDIN_FILENO, TCSANOW, &old_t) != 0) {
-        fprintf(stderr, "Error: Failed to restore terminal attributes.\n");
-        return -1;
+    if (is_tty) {
+        if (tcsetattr(STDIN_FILENO, TCSANOW, &old_t) != 0) {
+            fprintf(stderr, "Error: Failed to restore terminal attributes.\n");
+            return -1;
+        }
+        printf("\n");
     }
-    printf("\n");
     return 0;
 }
 
