@@ -95,13 +95,26 @@ Once inside, you will be prompted for your master password securely (without ech
 
 ### 2. Firefox WebExtension Integration
 
-1. Load the extension in Firefox:
+1. **Load the extension in Firefox**:
    * Open Firefox and navigate to `about:debugging`.
    * Click on **"This Firefox"** in the left sidebar.
    * Click **"Load Temporary Add-on..."**.
    * Navigate to your project directory, enter `src/extension/` and select `manifest.json`.
 
-2. Manage credentials:
-   * Click on the puzzle icon in the Firefox toolbar, select **Secrets Manager**.
-   * Enter your master password to unlock the vault.
-   * Search, view, and copy your passwords securely using the sleek glassmorphic UI.
+2. **Unlock the Vault**:
+   * Click on the puzzle or key icon in the Firefox toolbar to open the **Secrets Manager** popup.
+   * Enter your master password to unlock your vault (it utilizes Argon2id derived key for decryption).
+   * If no vault exists yet, you can initialize a brand-new vault directly from the extension.
+
+3. **Manage Credentials**:
+   * **Creation**: Click the `+` button in the unlocked popup to create new secrets. Choose templates (Logins, SSH keys, Cards, Notes) or add custom sensitive/non-sensitive fields dynamically.
+   * **Password Generator**: Utilize the magic wand button on any sensitive field to generate cryptographically secure passwords (`window.crypto.getRandomValues`).
+   * **Deletion**: Select any secret and click "Supprimer". Confirm within 3 seconds to permanently remove the secret.
+
+4. **Automatic Capture & Update**:
+   * Submit a login form on any website. If the vault is unlocked, the extension intercepts it and displays a sleek glassmorphic banner asking if you'd like to save a new secret or update an existing one.
+
+5. **Autofill Capabilities**:
+   * **Keyboard Shortcut**: Press **`Ctrl+Shift+L`** (or `Cmd+Shift+L` on macOS) on any page to fill matching credentials instantly.
+   * **Popup Suggestions**: When opening the popup, matching accounts for the active website are suggested at the very top for quick one-click filling.
+   * **In-Page Key Widget**: Interactive key icons are injected in login fields. Clicking the key displays a Shadow-DOM-isolated dropdown overlay listing username options to populate the forms seamlessly.
