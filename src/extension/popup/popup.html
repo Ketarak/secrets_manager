@@ -49,6 +49,42 @@
       <div id="unlock-error" class="error-msg hidden"></div>
     </div>
 
+    <!-- Écran : Initialisation / Création de coffre -->
+    <div id="create-view" class="view-panel hidden">
+      <div class="unlock-hero">
+        <div class="shield-circle">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+          </svg>
+        </div>
+        <h2>Créer un coffre</h2>
+        <p>Aucun coffre détecté. Choisissez un mot de passe maître pour initialiser votre coffre fort.</p>
+      </div>
+
+      <form id="create-form" class="interactive-form">
+        <div class="input-wrapper">
+          <input type="password" id="create-password" placeholder="Mot de passe maître" required autocomplete="new-password">
+          <button type="button" id="toggle-create-pwd" class="input-icon-btn">
+            <svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+          </button>
+        </div>
+        <div class="input-wrapper">
+          <input type="password" id="create-confirm-password" placeholder="Confirmer le mot de passe" required autocomplete="new-password">
+          <button type="button" id="toggle-create-confirm-pwd" class="input-icon-btn">
+            <svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+          </button>
+        </div>
+        <button type="submit" id="create-btn" class="btn btn-primary">Créer le coffre</button>
+      </form>
+      <div id="create-error" class="error-msg hidden"></div>
+    </div>
+
     <!-- Écran : Coffre Déverrouillé -->
     <div id="unlocked-view" class="view-panel hidden">
       <!-- Écran de recherche principale -->

@@ -69,7 +69,10 @@ test: $(TARGET)
 	./test_crypto
 	@echo "=== Running Integration Tests ==="
 	./tests/integration.sh
+	@echo "=== Running Native Messaging Tests ==="
+	./tests/test_native.py
 	@rm -f test_crypto
+
 
 # Help menu
 help:

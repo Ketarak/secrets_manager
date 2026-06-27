@@ -1,6 +1,7 @@
 document.addEventListener("DOMContentLoaded", () => {
   // --- Éléments de l'interface ---
   const lockedView = document.getElementById("locked-view");
+  const createView = document.getElementById("create-view");
   const unlockedView = document.getElementById("unlocked-view");
   const statusDot = document.getElementById("status-dot");
   const statusText = document.getElementById("status-text");
@@ -11,6 +12,15 @@ document.addEventListener("DOMContentLoaded", () => {
   const toggleMasterPwdBtn = document.getElementById("toggle-master-pwd");
   const unlockBtn = document.getElementById("unlock-btn");
   const unlockError = document.getElementById("unlock-error");
+
+  // Create View Elements
+  const createForm = document.getElementById("create-form");
+  const createPasswordInput = document.getElementById("create-password");
+  const createConfirmPasswordInput = document.getElementById("create-confirm-password");
+  const toggleCreatePwdBtn = document.getElementById("toggle-create-pwd");
+  const toggleCreateConfirmPwdBtn = document.getElementById("toggle-create-confirm-pwd");
+  const createBtn = document.getElementById("create-btn");
+  const createError = document.getElementById("create-error");
 
   // Unlocked View Elements
   const searchInput = document.getElementById("search-input");
@@ -58,19 +68,23 @@ document.addEventListener("DOMContentLoaded", () => {
       console.log("Popup received message:", data);
 
       if (data.status === "unlocked") {
-        updateUIState(true);
+        updateUIState("unlocked");
         sendToHost({ action: "list" }); // Demande la liste des secrets
       } else if (data.status === "locked" || data.status === "disconnected") {
-        updateUIState(false);
-        if (data.error) {
-          showError("Connexion au coffre perdue.");
+        if (data.status === "locked" && data.vault_exists === false) {
+          updateUIState("no_vault");
+        } else {
+          updateUIState("locked");
+          if (data.error) {
+            showError("Connexion au coffre perdue.");
+          }
         }
       } else if (data.status === "success") {
-        if (data.message === "Vault unlocked") {
-          updateUIState(true);
+        if (data.message === "Vault unlocked" || data.message === "Vault created and unlocked") {
+          updateUIState("unlocked");
           sendToHost({ action: "list" });
         } else if (data.message === "Vault locked") {
-          updateUIState(false);
+          updateUIState("locked");
         } else if (data.secrets) {
           allSecrets = data.secrets;
           renderSecretsList(allSecrets);
@@ -80,25 +94,46 @@ document.addEventListener("DOMContentLoaded", () => {
       } else if (data.status === "error") {
         unlockBtn.disabled = false;
         unlockBtn.innerText = "Déverrouiller";
-        showError(data.message || "Une erreur est survenue.");
+        createBtn.disabled = false;
+        createBtn.innerText = "Créer le coffre";
+        if (createView && createView.classList.contains("active")) {
+          showCreateError(data.message || "Une erreur est survenue.");
+        } else {
+          showError(data.message || "Une erreur est survenue.");
+        }
       }
     }
   });
 
   // --- Gestion de l'Interface UI ---
-  function updateUIState(isUnlocked) {
-    if (isUnlocked) {
-      lockedView.classList.add("hidden");
-      lockedView.classList.remove("active");
+  function updateUIState(state) {
+    lockedView.classList.add("hidden");
+    lockedView.classList.remove("active");
+    if (createView) {
+      createView.classList.add("hidden");
+      createView.classList.remove("active");
+    }
+    unlockedView.classList.add("hidden");
+    unlockedView.classList.remove("active");
+
+    if (state === "unlocked") {
       unlockedView.classList.remove("hidden");
       unlockedView.classList.add("active");
       statusDot.className = "dot unlocked";
       statusText.innerText = "Déverrouillé";
       unlockError.classList.add("hidden");
+      if (createError) createError.classList.add("hidden");
       masterPasswordInput.value = "";
-    } else {
-      unlockedView.classList.add("hidden");
-      unlockedView.classList.remove("active");
+      if (createPasswordInput) createPasswordInput.value = "";
+      if (createConfirmPasswordInput) createConfirmPasswordInput.value = "";
+    } else if (state === "no_vault") {
+      if (createView) {
+        createView.classList.remove("hidden");
+        createView.classList.add("active");
+      }
+      statusDot.className = "dot locked";
+      statusText.innerText = "Non initialisé";
+    } else { // "locked"
       lockedView.classList.remove("hidden");
       lockedView.classList.add("active");
       statusDot.className = "dot locked";
@@ -111,6 +146,13 @@ document.addEventListener("DOMContentLoaded", () => {
   function showError(msg) {
     unlockError.innerText = msg;
     unlockError.classList.remove("hidden");
+  }
+
+  function showCreateError(msg) {
+    if (createError) {
+      createError.innerText = msg;
+      createError.classList.remove("hidden");
+    }
   }
 
   // --- Rendu UI ---
@@ -222,6 +264,22 @@ document.addEventListener("DOMContentLoaded", () => {
     toggleMasterPwdBtn.innerHTML = isPwd ? icons.eyeOff : icons.eye;
   });
 
+  if (toggleCreatePwdBtn && createPasswordInput) {
+    toggleCreatePwdBtn.addEventListener("click", () => {
+      const isPwd = createPasswordInput.type === "password";
+      createPasswordInput.type = isPwd ? "text" : "password";
+      toggleCreatePwdBtn.innerHTML = isPwd ? icons.eyeOff : icons.eye;
+    });
+  }
+
+  if (toggleCreateConfirmPwdBtn && createConfirmPasswordInput) {
+    toggleCreateConfirmPwdBtn.addEventListener("click", () => {
+      const isPwd = createConfirmPasswordInput.type === "password";
+      createConfirmPasswordInput.type = isPwd ? "text" : "password";
+      toggleCreateConfirmPwdBtn.innerHTML = isPwd ? icons.eyeOff : icons.eye;
+    });
+  }
+
   // Action : Soumission du mot de passe maître pour déverrouiller
   unlockForm.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -234,6 +292,27 @@ document.addEventListener("DOMContentLoaded", () => {
 
     sendToHost({ action: "unlock", password: pwd });
   });
+
+  // Action : Soumission du mot de passe maître pour créer le coffre
+  if (createForm) {
+    createForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const pwd = createPasswordInput.value;
+      const confirmPwd = createConfirmPasswordInput.value;
+      if (!pwd) return;
+
+      if (pwd !== confirmPwd) {
+        showCreateError("Les mots de passe ne correspondent pas.");
+        return;
+      }
+
+      createBtn.disabled = true;
+      createBtn.innerText = "Calcul (Argon2id)...";
+      if (createError) createError.classList.add("hidden");
+
+      sendToHost({ action: "create", password: pwd });
+    });
+  }
 
   // Action : Recherche locale en temps réel
   searchInput.addEventListener("input", () => {

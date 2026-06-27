@@ -197,8 +197,54 @@ int native_messaging_loop(const char *filepath) {
             if (is_unlocked) {
                 snprintf(response, sizeof(response), "{\"status\":\"unlocked\"}");
             } else {
-                snprintf(response, sizeof(response), "{\"status\":\"locked\"}");
+                FILE *f = fopen(filepath, "rb");
+                if (f) {
+                    fclose(f);
+                    snprintf(response, sizeof(response), "{\"status\":\"locked\",\"vault_exists\":true}");
+                } else {
+                    snprintf(response, sizeof(response), "{\"status\":\"locked\",\"vault_exists\":false}");
+                }
             }
+
+        } else if (strcmp(action, "create") == 0) {
+            char password[256] = "";
+            get_json_string_value(json_buf, "password", password, sizeof(password));
+
+            FILE *f = fopen(filepath, "rb");
+            if (f) {
+                fclose(f);
+                snprintf(response, sizeof(response), "{\"status\":\"error\",\"message\":\"Vault already exists\"}");
+            } else {
+                unsigned char new_salt[SALT_SIZE];
+                unsigned char new_key[KEY_SIZE];
+                randombytes_buf(new_salt, SALT_SIZE);
+
+                if (derive_key(password, new_salt, new_key) != 0) {
+                    snprintf(response, sizeof(response), "{\"status\":\"error\",\"message\":\"Key derivation failed\"}");
+                } else {
+                    Vault *new_vault = vault_create();
+                    if (!new_vault) {
+                        snprintf(response, sizeof(response), "{\"status\":\"error\",\"message\":\"Failed to create vault structure\"}");
+                    } else {
+                        if (vault_save(new_vault, filepath, new_key, new_salt) != 0) {
+                            snprintf(response, sizeof(response), "{\"status\":\"error\",\"message\":\"Failed to save vault file\"}");
+                        } else {
+                            memcpy(salt, new_salt, SALT_SIZE);
+                            memcpy(key, new_key, KEY_SIZE);
+                            vault = new_vault;
+                            is_unlocked = 1;
+                            snprintf(response, sizeof(response), "{\"status\":\"success\",\"message\":\"Vault created and unlocked\"}");
+                        }
+                        if (!is_unlocked) {
+                            vault_free(new_vault);
+                        }
+                    }
+                    if (!is_unlocked) {
+                        sodium_memzero(new_key, sizeof(new_key));
+                    }
+                }
+            }
+            sodium_memzero(password, sizeof(password));
 
         } else if (strcmp(action, "list") == 0) {
             if (!is_unlocked) {
