@@ -28,6 +28,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const noSecretsMsg = document.getElementById("no-secrets-msg");
   const lockBtn = document.getElementById("lock-btn");
   const addBtn = document.getElementById("add-btn");
+  const suggestionsSection = document.getElementById("suggestions-section");
+  const suggestionsList = document.getElementById("suggestions-list");
 
   // Detail Subview Elements
   const searchSubview = document.getElementById("search-subview");
@@ -38,6 +40,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const detailSecretIcon = document.getElementById("detail-secret-icon");
   const detailFieldsList = document.getElementById("detail-fields-list");
   const deleteSecretBtn = document.getElementById("delete-secret-btn");
+  const fillSecretBtn = document.getElementById("fill-secret-btn");
 
   // Add Subview Elements
   const addSubview = document.getElementById("add-subview");
@@ -52,6 +55,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // --- Session Data ---
   let allSecrets = []; // Tous les secrets chargés depuis le binaire
   let currentSecretTitle = ""; // Titre du secret sélectionné
+  let currentSecretFields = null; // Champs du secret sélectionné pour le remplissage
   let deleteConfirmed = false;
   let activeFieldsList = []; // Liste des gestionnaires de champs actifs lors de l'ajout
 
@@ -104,6 +108,7 @@ document.addEventListener("DOMContentLoaded", () => {
           // Retourne à la liste des secrets après ajout/suppression
           showSubview("search");
           sendToHost({ action: "list" });
+          loadSuggestions(); // Recharger les suggestions après modification du coffre
         } else if (data.secrets) {
           allSecrets = data.secrets;
           renderSecretsList(allSecrets);
@@ -150,6 +155,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (createPasswordInput) createPasswordInput.value = "";
       if (createConfirmPasswordInput) createConfirmPasswordInput.value = "";
       showSubview("search");
+      loadSuggestions(); // Charger les suggestions dès le déverrouillage
     } else if (state === "no_vault") {
       if (createView) {
         createView.classList.remove("hidden");
@@ -157,12 +163,14 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       statusDot.className = "dot locked";
       statusText.innerText = "Non initialisé";
+      if (suggestionsSection) suggestionsSection.classList.add("hidden");
     } else { // "locked"
       lockedView.classList.remove("hidden");
       lockedView.classList.add("active");
       statusDot.className = "dot locked";
       statusText.innerText = "Verrouillé";
       showSubview("search");
+      if (suggestionsSection) suggestionsSection.classList.add("hidden");
     }
   }
 
@@ -197,6 +205,62 @@ document.addEventListener("DOMContentLoaded", () => {
       addError.innerText = msg;
       addError.classList.remove("hidden");
     }
+  }
+
+  // Charge les suggestions correspondant au site visité sur l'onglet actif
+  function loadSuggestions() {
+    if (!suggestionsSection || !suggestionsList) return;
+
+    browser.runtime.sendMessage({
+      target: "background",
+      action: "get-active-tab-suggestions"
+    }).then(response => {
+      suggestionsList.innerHTML = "";
+      if (response && response.status === "success" && response.suggestions && response.suggestions.length > 0) {
+        response.suggestions.forEach(s => {
+          const li = document.createElement("li");
+          li.className = "suggestion-item";
+          
+          li.innerHTML = `
+            <div class="suggestion-info" style="cursor: pointer; flex: 1;">
+              <div class="suggestion-info-header" style="display: flex; align-items: center; gap: 8px;">
+                <div class="item-icon" style="width: 14px; height: 14px; color: var(--primary);">${icons[s.type] || icons.login}</div>
+                <span class="suggestion-title" style="font-size: 13px; font-weight: 500;">${escapeHtml(s.title)}</span>
+              </div>
+              <span class="suggestion-user" style="font-size: 11px; color: var(--text-muted); padding-left: 22px;">${escapeHtml(s.username)}</span>
+            </div>
+            <button class="suggestion-fill-btn">
+              Remplir
+            </button>
+          `;
+
+          // Clic sur l'info ouvre les détails du secret
+          li.querySelector(".suggestion-info").addEventListener("click", () => {
+            showSecretDetails(s);
+          });
+
+          // Clic sur le bouton Remplir effectue l'injection et ferme la popup
+          li.querySelector(".suggestion-fill-btn").addEventListener("click", (e) => {
+            e.stopPropagation();
+            browser.runtime.sendMessage({
+              target: "background",
+              action: "fill-credentials-on-page",
+              fields: s.fields
+            }).then(() => {
+              window.close(); // Ferme la popup pour un rendu naturel
+            });
+          });
+
+          suggestionsList.appendChild(li);
+        });
+        suggestionsSection.classList.remove("hidden");
+      } else {
+        suggestionsSection.classList.add("hidden");
+      }
+    }).catch(err => {
+      console.error("Error loading suggestions:", err);
+      suggestionsSection.classList.add("hidden");
+    });
   }
 
   // --- Rendu UI ---
@@ -234,6 +298,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function showSecretDetails(secret) {
     currentSecretTitle = secret.title;
+    currentSecretFields = secret.fields;
     detailTitle.innerText = secret.title;
     detailType.innerText = secret.type;
     detailSecretIcon.innerHTML = icons[secret.type] || icons.login;
@@ -248,7 +313,7 @@ document.addEventListener("DOMContentLoaded", () => {
       </svg>
       Supprimer
     `;
-    deleteSecretBtn.classList.remove("confirming");
+    deleteSecretBtn.classList.remove("btn-danger");
 
     secret.fields.forEach(field => {
       const fieldDiv = document.createElement("div");
@@ -614,6 +679,23 @@ document.addEventListener("DOMContentLoaded", () => {
         type: type,
         fields: fields
       });
+    });
+  }
+
+  // Action : Remplissage à la demande depuis la popup
+  if (fillSecretBtn) {
+    fillSecretBtn.addEventListener("click", () => {
+      if (currentSecretFields) {
+        browser.runtime.sendMessage({
+          target: "background",
+          action: "fill-credentials-on-page",
+          fields: currentSecretFields
+        }).then(() => {
+          window.close(); // Ferme la popup après remplissage
+        }).catch(err => {
+          console.error("Autofill from details failed:", err);
+        });
+      }
     });
   }
 

@@ -24,6 +24,15 @@
       "run_at": "document_end"
     }
   ],
+  "commands": {
+    "trigger-autofill": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+L",
+        "mac": "Command+Shift+L"
+      },
+      "description": "Remplir automatiquement les identifiants"
+    }
+  },
   "action": {
     "default_popup": "popup/popup.html"
   },
