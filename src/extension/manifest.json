@@ -5,11 +5,25 @@
   "description": "Gestionnaire de secrets local et sécurisé utilisant Native Messaging.",
   "permissions": [
     "nativeMessaging",
-    "storage"
+    "storage",
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
   ],
   "background": {
     "scripts": ["background.js"]
   },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_end"
+    }
+  ],
   "action": {
     "default_popup": "popup/popup.html"
   },

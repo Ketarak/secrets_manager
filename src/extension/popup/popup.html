@@ -113,6 +113,13 @@
             </svg>
             Verrouiller
           </button>
+          <button id="add-btn" class="btn btn-primary">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            Ajouter
+          </button>
         </footer>
       </div>
 
@@ -138,7 +145,59 @@
           <div id="detail-fields-list" class="fields-list">
             <!-- Rempli dynamiquement -->
           </div>
+
+          <div class="detail-actions">
+            <button id="delete-secret-btn" class="btn btn-danger">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              </svg>
+              Supprimer
+            </button>
+          </div>
         </div>
+      </div>
+
+      <!-- Écran de création d'un secret -->
+      <div id="add-subview" class="subview hidden">
+        <button id="back-to-list-from-add-btn" class="back-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="19" y1="12" x2="5" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
+          </svg>
+          Annuler
+        </button>
+
+        <form id="add-secret-form" class="interactive-form">
+          <div class="input-group">
+            <label for="add-title-input">Titre (ex: github.com)</label>
+            <input type="text" id="add-title-input" required placeholder="Titre ou Domaine">
+          </div>
+
+          <div class="input-group">
+            <label for="add-type-select">Type de secret</label>
+            <select id="add-type-select" class="custom-select">
+              <option value="login" selected>Connexion (Login)</option>
+              <option value="ssh">Clé SSH</option>
+              <option value="card">Carte Bancaire</option>
+              <option value="note">Note Sécurisée</option>
+            </select>
+          </div>
+
+          <div id="add-fields-container" class="fields-list">
+            <!-- Rempli dynamiquement par JS -->
+          </div>
+
+          <div class="form-actions-row">
+            <button type="button" id="add-custom-field-btn" class="btn btn-secondary btn-sm">
+              + Ajouter un champ
+            </button>
+            <button type="submit" id="save-secret-btn" class="btn btn-primary">
+              Enregistrer
+            </button>
+          </div>
+          <div id="add-error" class="error-msg hidden"></div>
+        </form>
       </div>
     </div>
   </div>

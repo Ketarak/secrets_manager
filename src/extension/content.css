@@ -1,0 +1,3 @@
+/* Stylesheet for Secrets Manager content scripts.
+   All styles for injected prompts are dynamically loaded within Shadow DOM to prevent website layout pollution.
+*/

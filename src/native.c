@@ -330,6 +330,99 @@ int native_messaging_loop(const char *filepath) {
                     }
                 }
             }
+        } else if (strcmp(action, "add") == 0) {
+            if (!is_unlocked) {
+                snprintf(response, sizeof(response), "{\"status\":\"error\",\"message\":\"Vault is locked\"}");
+            } else {
+                char title[256] = "";
+                char type[256] = "";
+                get_json_string_value(json_buf, "title", title, sizeof(title));
+                get_json_string_value(json_buf, "type", type, sizeof(type));
+                
+                if (strlen(title) == 0) {
+                    snprintf(response, sizeof(response), "{\"status\":\"error\",\"message\":\"Title is required\"}");
+                } else {
+                    if (strlen(type) == 0) {
+                        strcpy(type, "login");
+                    }
+                    
+                    // Supprime l'entrée existante si elle existe déjà pour écraser/mettre à jour ses champs
+                    vault_delete_entry(vault, title);
+                    
+                    Entry *entry = vault_add_entry(vault, title, type);
+                    if (!entry) {
+                        snprintf(response, sizeof(response), "{\"status\":\"error\",\"message\":\"Failed to add entry\"}");
+                    } else {
+                        const char *fields_start = strstr(json_buf, "\"fields\"");
+                        if (fields_start) {
+                            fields_start = strchr(fields_start, '[');
+                            if (fields_start) {
+                                const char *item = fields_start;
+                                while ((item = strchr(item, '{')) != NULL) {
+                                    const char *item_end = strchr(item, '}');
+                                    if (!item_end) break;
+                                    
+                                    size_t obj_len = item_end - item + 1;
+                                    char *field_obj = (char *)malloc(obj_len + 1);
+                                    if (field_obj) {
+                                        memcpy(field_obj, item, obj_len);
+                                        field_obj[obj_len] = '\0';
+                                        
+                                        char f_name[256] = "";
+                                        char f_val[2048] = "";
+                                        get_json_string_value(field_obj, "name", f_name, sizeof(f_name));
+                                        get_json_string_value(field_obj, "value", f_val, sizeof(f_val));
+                                        
+                                        int is_sens = 0;
+                                        const char *sens_pos = strstr(field_obj, "\"is_sensitive\"");
+                                        if (sens_pos) {
+                                            const char *colon = strchr(sens_pos, ':');
+                                            if (colon) {
+                                                const char *val_start = colon + 1;
+                                                while (*val_start == ' ' || *val_start == '\t') val_start++;
+                                                if (strncmp(val_start, "true", 4) == 0 || strncmp(val_start, "1", 1) == 0) {
+                                                    is_sens = 1;
+                                                }
+                                            }
+                                        }
+                                        
+                                        if (strlen(f_name) > 0) {
+                                            entry_set_field(entry, f_name, f_val, is_sens);
+                                        }
+                                        
+                                        sodium_memzero(f_val, sizeof(f_val));
+                                        free(field_obj);
+                                    }
+                                    item = item_end;
+                                }
+                            }
+                        }
+                        
+                        if (vault_save(vault, filepath, key, salt) == 0) {
+                            snprintf(response, sizeof(response), "{\"status\":\"success\",\"message\":\"Secret saved\"}");
+                        } else {
+                            snprintf(response, sizeof(response), "{\"status\":\"error\",\"message\":\"Failed to save vault file\"}");
+                        }
+                    }
+                }
+            }
+        } else if (strcmp(action, "delete") == 0) {
+            if (!is_unlocked) {
+                snprintf(response, sizeof(response), "{\"status\":\"error\",\"message\":\"Vault is locked\"}");
+            } else {
+                char title[256] = "";
+                get_json_string_value(json_buf, "title", title, sizeof(title));
+                
+                if (vault_delete_entry(vault, title) != 0) {
+                    snprintf(response, sizeof(response), "{\"status\":\"error\",\"message\":\"Secret not found\"}");
+                } else {
+                    if (vault_save(vault, filepath, key, salt) == 0) {
+                        snprintf(response, sizeof(response), "{\"status\":\"success\",\"message\":\"Secret deleted\"}");
+                    } else {
+                        snprintf(response, sizeof(response), "{\"status\":\"error\",\"message\":\"Failed to save vault file\"}");
+                    }
+                }
+            }
         } else {
             snprintf(response, sizeof(response), "{\"status\":\"error\",\"message\":\"Unknown action\"}");
         }

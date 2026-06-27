@@ -27,6 +27,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const secretsList = document.getElementById("secrets-list");
   const noSecretsMsg = document.getElementById("no-secrets-msg");
   const lockBtn = document.getElementById("lock-btn");
+  const addBtn = document.getElementById("add-btn");
 
   // Detail Subview Elements
   const searchSubview = document.getElementById("search-subview");
@@ -36,9 +37,23 @@ document.addEventListener("DOMContentLoaded", () => {
   const detailType = document.getElementById("detail-type");
   const detailSecretIcon = document.getElementById("detail-secret-icon");
   const detailFieldsList = document.getElementById("detail-fields-list");
+  const deleteSecretBtn = document.getElementById("delete-secret-btn");
+
+  // Add Subview Elements
+  const addSubview = document.getElementById("add-subview");
+  const backToParentFromAddBtn = document.getElementById("back-to-list-from-add-btn");
+  const addSecretForm = document.getElementById("add-secret-form");
+  const addTitleInput = document.getElementById("add-title-input");
+  const addTypeSelect = document.getElementById("add-type-select");
+  const addFieldsContainer = document.getElementById("add-fields-container");
+  const addCustomFieldBtn = document.getElementById("add-custom-field-btn");
+  const addError = document.getElementById("add-error");
 
   // --- Session Data ---
   let allSecrets = []; // Tous les secrets chargés depuis le binaire
+  let currentSecretTitle = ""; // Titre du secret sélectionné
+  let deleteConfirmed = false;
+  let activeFieldsList = []; // Liste des gestionnaires de champs actifs lors de l'ajout
 
   // Icônes SVG partagées
   const icons = {
@@ -85,6 +100,10 @@ document.addEventListener("DOMContentLoaded", () => {
           sendToHost({ action: "list" });
         } else if (data.message === "Vault locked") {
           updateUIState("locked");
+        } else if (data.message === "Secret saved" || data.message === "Secret deleted") {
+          // Retourne à la liste des secrets après ajout/suppression
+          showSubview("search");
+          sendToHost({ action: "list" });
         } else if (data.secrets) {
           allSecrets = data.secrets;
           renderSecretsList(allSecrets);
@@ -96,8 +115,12 @@ document.addEventListener("DOMContentLoaded", () => {
         unlockBtn.innerText = "Déverrouiller";
         createBtn.disabled = false;
         createBtn.innerText = "Créer le coffre";
-        if (createView && createView.classList.contains("active")) {
+        
+        const activePanel = document.querySelector(".view-panel.active");
+        if (activePanel && activePanel.id === "create-view") {
           showCreateError(data.message || "Une erreur est survenue.");
+        } else if (addSubview && addSubview.classList.contains("active")) {
+          showAddError(data.message || "Une erreur est survenue.");
         } else {
           showError(data.message || "Une erreur est survenue.");
         }
@@ -126,6 +149,7 @@ document.addEventListener("DOMContentLoaded", () => {
       masterPasswordInput.value = "";
       if (createPasswordInput) createPasswordInput.value = "";
       if (createConfirmPasswordInput) createConfirmPasswordInput.value = "";
+      showSubview("search");
     } else if (state === "no_vault") {
       if (createView) {
         createView.classList.remove("hidden");
@@ -138,8 +162,21 @@ document.addEventListener("DOMContentLoaded", () => {
       lockedView.classList.add("active");
       statusDot.className = "dot locked";
       statusText.innerText = "Verrouillé";
+      showSubview("search");
+    }
+  }
+
+  function showSubview(subviewName) {
+    searchSubview.classList.add("hidden");
+    detailSubview.classList.add("hidden");
+    if (addSubview) addSubview.classList.add("hidden");
+
+    if (subviewName === "search") {
       searchSubview.classList.remove("hidden");
-      detailSubview.classList.add("hidden");
+    } else if (subviewName === "detail") {
+      detailSubview.classList.remove("hidden");
+    } else if (subviewName === "add" && addSubview) {
+      addSubview.classList.remove("hidden");
     }
   }
 
@@ -152,6 +189,13 @@ document.addEventListener("DOMContentLoaded", () => {
     if (createError) {
       createError.innerText = msg;
       createError.classList.remove("hidden");
+    }
+  }
+
+  function showAddError(msg) {
+    if (addError) {
+      addError.innerText = msg;
+      addError.classList.remove("hidden");
     }
   }
 
@@ -189,10 +233,22 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function showSecretDetails(secret) {
+    currentSecretTitle = secret.title;
     detailTitle.innerText = secret.title;
     detailType.innerText = secret.type;
     detailSecretIcon.innerHTML = icons[secret.type] || icons.login;
     detailFieldsList.innerHTML = "";
+    
+    // Réinitialiser le bouton supprimer
+    deleteConfirmed = false;
+    deleteSecretBtn.innerHTML = `
+      <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="3 6 5 6 21 6"></polyline>
+        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+      </svg>
+      Supprimer
+    `;
+    deleteSecretBtn.classList.remove("confirming");
 
     secret.fields.forEach(field => {
       const fieldDiv = document.createElement("div");
@@ -251,8 +307,173 @@ document.addEventListener("DOMContentLoaded", () => {
       detailFieldsList.appendChild(fieldDiv);
     });
 
-    searchSubview.classList.add("hidden");
-    detailSubview.classList.remove("hidden");
+    showSubview("detail");
+  }
+
+  // --- Logique d'Ajout de Secret (Création manuelle) ---
+  
+  // Génère un mot de passe cryptographiquement sûr
+  function generateSecurePassword(length = 16) {
+    const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_=+[]{}|;:,.<>?";
+    let pwd = "";
+    const randomValues = new Uint32Array(length);
+    window.crypto.getRandomValues(randomValues);
+    for (let i = 0; i < length; i++) {
+      pwd += chars[randomValues[i] % chars.length];
+    }
+    return pwd;
+  }
+
+  // Ajoute un champ éditable dynamiquement dans la vue création
+  function addFieldRowEdit(name = "", value = "", isSensitive = false, isDefault = false) {
+    const fieldDiv = document.createElement("div");
+    fieldDiv.className = "field-row-edit";
+    
+    const headerDiv = document.createElement("div");
+    headerDiv.className = "field-header-edit";
+    
+    // Label ou input de nom de champ
+    let nameGetter = null;
+    if (isDefault) {
+      const labelSpan = document.createElement("span");
+      labelSpan.className = "field-label";
+      labelSpan.innerText = name;
+      headerDiv.appendChild(labelSpan);
+      nameGetter = () => name;
+    } else {
+      const nameInput = document.createElement("input");
+      nameInput.type = "text";
+      nameInput.placeholder = "Nom du champ (ex: Code PIN)";
+      nameInput.value = name;
+      nameInput.required = true;
+      nameInput.style.padding = "6px 10px";
+      nameInput.style.fontSize = "12px";
+      headerDiv.appendChild(nameInput);
+      nameGetter = () => nameInput.value.trim();
+      
+      // Bouton supprimer le champ personnalisé
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "field-remove-btn";
+      removeBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>`;
+      removeBtn.addEventListener("click", () => {
+        fieldDiv.remove();
+        activeFieldsList = activeFieldsList.filter(f => f.element !== fieldDiv);
+      });
+      headerDiv.appendChild(removeBtn);
+    }
+    fieldDiv.appendChild(headerDiv);
+
+    // Wrapper pour la valeur
+    const valWrapper = document.createElement("div");
+    valWrapper.className = isSensitive ? "pwd-wrapper" : "input-wrapper";
+    
+    const valInput = document.createElement("input");
+    valInput.type = isSensitive ? "password" : "text";
+    valInput.placeholder = isSensitive ? "Saisie sécurisée" : "Valeur";
+    valInput.value = value;
+    valInput.required = true;
+    valInput.style.padding = "10px 12px";
+    valWrapper.appendChild(valInput);
+
+    let currentSensitiveState = isSensitive;
+
+    // Actions pour les champs sensibles (Afficher/Masquer et Générateur)
+    function setupSensitiveActions() {
+      // Supprime les anciennes actions si existantes
+      const oldActions = valWrapper.querySelector(".pwd-actions");
+      if (oldActions) oldActions.remove();
+
+      if (currentSensitiveState) {
+        const actionsDiv = document.createElement("div");
+        actionsDiv.className = "pwd-actions";
+        
+        // Bouton afficher/masquer
+        const toggleBtn = document.createElement("button");
+        toggleBtn.type = "button";
+        toggleBtn.className = "pwd-action-btn";
+        toggleBtn.innerHTML = icons.eye;
+        toggleBtn.addEventListener("click", () => {
+          const isPwd = valInput.type === "password";
+          valInput.type = isPwd ? "text" : "password";
+          toggleBtn.innerHTML = isPwd ? icons.eyeOff : icons.eye;
+        });
+        actionsDiv.appendChild(toggleBtn);
+        
+        // Bouton générateur de mot de passe
+        const genBtn = document.createElement("button");
+        genBtn.type = "button";
+        genBtn.className = "pwd-action-btn";
+        genBtn.title = "Générer un mot de passe fort";
+        genBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></svg>`;
+        genBtn.addEventListener("click", () => {
+          valInput.value = generateSecurePassword(16);
+          valInput.type = "text";
+          toggleBtn.innerHTML = icons.eyeOff;
+        });
+        actionsDiv.appendChild(genBtn);
+
+        valWrapper.appendChild(actionsDiv);
+      }
+    }
+
+    setupSensitiveActions();
+    fieldDiv.appendChild(valWrapper);
+
+    // Checkbox sensibilité pour les champs personnalisés
+    let sensitiveGetter = () => isSensitive;
+    if (!isDefault) {
+      const sensLabel = document.createElement("label");
+      sensLabel.className = "sensitive-toggle";
+      
+      const sensCheck = document.createElement("input");
+      sensCheck.type = "checkbox";
+      sensCheck.checked = isSensitive;
+      sensCheck.addEventListener("change", () => {
+        currentSensitiveState = sensCheck.checked;
+        valWrapper.className = currentSensitiveState ? "pwd-wrapper" : "input-wrapper";
+        valInput.type = currentSensitiveState ? "password" : "text";
+        setupSensitiveActions();
+      });
+      sensitiveGetter = () => sensCheck.checked;
+      
+      sensLabel.appendChild(sensCheck);
+      sensLabel.appendChild(document.createTextNode(" Champ sensible (masqué/sécurisé)"));
+      fieldDiv.appendChild(sensLabel);
+    }
+
+    addFieldsContainer.appendChild(fieldDiv);
+    
+    // Enregistre le gestionnaire de données du champ
+    activeFieldsList.push({
+      element: fieldDiv,
+      getData: () => ({
+        name: nameGetter(),
+        value: valInput.value,
+        is_sensitive: sensitiveGetter()
+      })
+    });
+  }
+
+  // Initialise les champs par défaut selon le type de secret
+  function initDefaultFieldsForType(type) {
+    addFieldsContainer.innerHTML = "";
+    activeFieldsList = [];
+    
+    if (type === "login") {
+      addFieldRowEdit("Identifiant", "", false, true);
+      addFieldRowEdit("Mot de passe", "", true, true);
+    } else if (type === "ssh") {
+      addFieldRowEdit("Utilisateur", "", false, true);
+      addFieldRowEdit("Clé Privée", "", true, true);
+    } else if (type === "card") {
+      addFieldRowEdit("Titulaire", "", false, true);
+      addFieldRowEdit("Numéro de carte", "", false, true);
+      addFieldRowEdit("Expiration", "", false, true);
+      addFieldRowEdit("CVV", "", true, true);
+    } else if (type === "note") {
+      addFieldRowEdit("Note", "", true, true);
+    }
   }
 
   // --- Gestion des Événements UI ---
@@ -327,19 +548,107 @@ document.addEventListener("DOMContentLoaded", () => {
     renderSecretsList(filtered);
   });
 
-  // Action : Retour à la liste
+  // Action : Retour à la liste (depuis détail)
   backToListBtn.addEventListener("click", () => {
-    detailSubview.classList.add("hidden");
-    searchSubview.classList.remove("hidden");
+    showSubview("search");
   });
 
+  // Action : Retour à la liste (depuis création)
+  if (backToParentFromAddBtn) {
+    backToParentFromAddBtn.addEventListener("click", () => {
+      showSubview("search");
+    });
+  }
+
   // Action : Bouton Lock
-  lockBtn.addEventListener("lock", () => {
-    sendToHost({ action: "lock" });
-  });
   lockBtn.addEventListener("click", () => {
     sendToHost({ action: "lock" });
   });
+
+  // Action : Bouton Ajouter (affiche le formulaire de création)
+  if (addBtn) {
+    addBtn.addEventListener("click", () => {
+      addTitleInput.value = "";
+      addTypeSelect.value = "login";
+      if (addError) addError.classList.add("hidden");
+      initDefaultFieldsForType("login");
+      showSubview("add");
+    });
+  }
+
+  // Changement de type dans la création dynamique de secret
+  if (addTypeSelect) {
+    addTypeSelect.addEventListener("change", () => {
+      initDefaultFieldsForType(addTypeSelect.value);
+    });
+  }
+
+  // Ajout de champ personnalisé
+  if (addCustomFieldBtn) {
+    addCustomFieldBtn.addEventListener("click", () => {
+      addFieldRowEdit("", "", false, false);
+    });
+  }
+
+  // Soumission du formulaire d'enregistrement de secret
+  if (addSecretForm) {
+    addSecretForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      
+      const title = addTitleInput.value.trim();
+      const type = addTypeSelect.value;
+      
+      if (!title) {
+        showAddError("Le titre est obligatoire.");
+        return;
+      }
+      
+      // Récupère les données de tous les champs
+      const fields = activeFieldsList.map(f => f.getData());
+      
+      if (addError) addError.classList.add("hidden");
+      
+      sendToHost({
+        action: "add",
+        title: title,
+        type: type,
+        fields: fields
+      });
+    });
+  }
+
+  // Action : Suppression d'un secret avec double-confirmation temporisée
+  if (deleteSecretBtn) {
+    deleteSecretBtn.addEventListener("click", () => {
+      if (!deleteConfirmed) {
+        deleteConfirmed = true;
+        deleteSecretBtn.innerText = "Confirmer ?";
+        deleteSecretBtn.classList.add("btn-danger");
+        
+        // Reset l'état après 3 secondes si l'utilisateur ne clique pas de nouveau
+        setTimeout(() => {
+          if (deleteConfirmed) {
+            deleteConfirmed = false;
+            deleteSecretBtn.innerHTML = `
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              </svg>
+              Supprimer
+            `;
+            deleteSecretBtn.classList.remove("btn-danger");
+          }
+        }, 3000);
+      } else {
+        // Exécute la suppression native
+        sendToHost({
+          action: "delete",
+          title: currentSecretTitle
+        });
+        deleteConfirmed = false;
+      }
+    });
+  }
 
   // --- Utilitaires ---
   function escapeHtml(str) {

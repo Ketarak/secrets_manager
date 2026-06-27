@@ -114,6 +114,72 @@ def main():
         assert "already exists" in resp["message"].lower(), f"Expected 'already exists' message, got: {resp}"
         print("Pass: Vault overwrite prevention verified.")
 
+        # 8. Test adding a secret
+        print("[Test 8] Adding a secret via native message...")
+        send_msg(proc, {
+            "action": "add",
+            "title": "github.com",
+            "type": "login",
+            "fields": [
+                {"name": "username", "value": "maxime", "is_sensitive": False},
+                {"name": "password", "value": "mysecurepassword456", "is_sensitive": True}
+            ]
+        })
+        resp = read_msg(proc)
+        print(f"Response: {resp}")
+        assert resp["status"] == "success", f"Expected success, got: {resp}"
+        print("Pass: Secret added successfully.")
+
+        # 9. Test getting the added secret
+        print("[Test 9] Retrieving the added secret...")
+        send_msg(proc, {"action": "get", "title": "github.com"})
+        resp = read_msg(proc)
+        print(f"Response: {resp}")
+        assert resp["status"] == "success", f"Expected success, got: {resp}"
+        assert resp["title"] == "github.com", f"Expected title github.com, got: {resp}"
+        assert resp["type"] == "login", f"Expected type login, got: {resp}"
+        assert len(resp["fields"]) == 2, f"Expected 2 fields, got: {resp}"
+        # Fields order might match insertion order
+        fields = {f["name"]: f for f in resp["fields"]}
+        assert fields["username"]["value"] == "maxime", f"Expected username value, got: {resp}"
+        assert fields["username"]["is_sensitive"] is False
+        assert fields["password"]["value"] == "mysecurepassword456", f"Expected password value, got: {resp}"
+        assert fields["password"]["is_sensitive"] is True
+        print("Pass: Secret fields retrieved correctly.")
+
+        # 10. Test listing secrets
+        print("[Test 10] Listing secrets...")
+        send_msg(proc, {"action": "list"})
+        resp = read_msg(proc)
+        print(f"Response: {resp}")
+        assert resp["status"] == "success", f"Expected success, got: {resp}"
+        assert len(resp["secrets"]) == 1, f"Expected 1 secret, got: {resp}"
+        assert resp["secrets"][0]["title"] == "github.com", f"Expected github.com, got: {resp}"
+        print("Pass: Secrets listed correctly.")
+
+        # 11. Test deleting the secret
+        print("[Test 11] Deleting the secret...")
+        send_msg(proc, {"action": "delete", "title": "github.com"})
+        resp = read_msg(proc)
+        print(f"Response: {resp}")
+        assert resp["status"] == "success", f"Expected success, got: {resp}"
+        print("Pass: Secret deleted successfully.")
+
+        # 12. Verify secret is gone via list and get
+        print("[Test 12] Verifying deletion...")
+        send_msg(proc, {"action": "list"})
+        resp = read_msg(proc)
+        print(f"Response: {resp}")
+        assert resp["status"] == "success", f"Expected success, got: {resp}"
+        assert len(resp["secrets"]) == 0, f"Expected 0 secrets, got: {resp}"
+
+        send_msg(proc, {"action": "get", "title": "github.com"})
+        resp = read_msg(proc)
+        print(f"Response: {resp}")
+        assert resp["status"] == "error", f"Expected error, got: {resp}"
+        assert "not found" in resp["message"].lower(), f"Expected not found, got: {resp}"
+        print("Pass: Secret deletion verified.")
+
     finally:
         proc.stdin.close()
         proc.wait()
